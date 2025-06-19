@@ -1,17 +1,14 @@
 {
-  "functions": {
-    "backend/main.py": {
-      "runtime": "python3.9"
+  "builds": [
+    {
+      "src": "backend/index.py",
+      "use": "@vercel/python"
     }
-  },
+  ],
   "routes": [
     {
-      "src": "/api/run-forecast",
-      "dest": "/backend/main.py"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "$1"
+      "src": "/api/(.*)",
+      "dest": "backend/index.py"
     }
   ]
 }
