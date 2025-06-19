@@ -2,3 +2,4 @@ fastapi
 pandas
 scikit-learn
 numpy
+mangum==0.18.0
