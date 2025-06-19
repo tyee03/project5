@@ -2,7 +2,7 @@ name: Run Forecast Daily
 
 on:
   schedule:
-    - cron: '0 0 * * *' # 매일 오전 9시 (KST)
+    - cron: '0 0 * * *'  # 매일 오전 9시 (KST)
   workflow_dispatch:
 
 jobs:
@@ -28,3 +28,5 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+
