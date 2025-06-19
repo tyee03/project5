@@ -80,8 +80,14 @@ export default function CustomerForecastPage() {
     
     try {
       // 새 예측 실행 API 호출 (프록시를 통해) - 이 부분이 중요!
-      const response = await fetch('/api/forecast', {
+      const response = await fetch('/api/run-forecast', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          timestamp: new Date().toISOString()
+        }),
       });
 
       if (!response.ok) {

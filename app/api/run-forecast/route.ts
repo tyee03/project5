@@ -1,5 +1,5 @@
 // app/api/run-forecast/route.ts
-// FastAPI 서버의 GET 엔드포인트에 맞춰 수정
+// Vercel 배포용 수정
 
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -7,12 +7,29 @@ export async function POST(request: NextRequest) {
   try {
     console.log('프록시: 새 예측 실행 요청 받음');
     
-    // FastAPI 서버의 /forecast는 GET 메서드를 사용합니다
-    const response = await fetch('http://127.0.0.1:8000/forecast', {
-      method: 'GET', // POST에서 GET으로 변경
+    // 환경변수로 FastAPI 서버 URL 관리
+    const fastApiUrl = process.env.FASTAPI_URL || 'http://127.0.0.1:8000';
+    const forecastEndpoint = `${fastApiUrl}/forecast`;
+    
+    console.log('FastAPI 서버 URL:', forecastEndpoint);
+    
+    // Vercel에서는 로컬 서버에 접근할 수 없으므로 에러 처리
+    if (process.env.NODE_ENV === 'production' && fastApiUrl.includes('127.0.0.1')) {
+      return NextResponse.json({
+        success: false,
+        message: 'FastAPI 서버가 클라우드에 배포되지 않았습니다.',
+        detail: 'FastAPI 서버를 클라우드에 배포하고 FASTAPI_URL 환경변수를 설정해주세요.',
+        action: 'deploy_fastapi_server'
+      }, { status: 503 });
+    }
+    
+    const response = await fetch(forecastEndpoint, {
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
+      // Vercel에서는 타임아웃 설정 추가
+      signal: AbortSignal.timeout(25000), // 25초 타임아웃
     });
 
     console.log(`FastAPI 응답 상태: ${response.status}`);
@@ -42,13 +59,20 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('프록시 에러:', error);
     
-    // 연결 에러인 경우 (FastAPI 서버가 실행되지 않은 경우)
-    if (error instanceof Error && error.message.includes('ECONNREFUSED')) {
+    // 연결 에러인 경우
+    if (error instanceof Error && (
+      error.message.includes('ECONNREFUSED') || 
+      error.message.includes('fetch failed') ||
+      error.name === 'TimeoutError'
+    )) {
       return NextResponse.json(
         { 
           success: false, 
-          message: 'FastAPI 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.',
-          detail: 'http://127.0.0.1:8000 서버에 연결할 수 없습니다.'
+          message: 'FastAPI 서버에 연결할 수 없습니다.',
+          detail: process.env.NODE_ENV === 'production' 
+            ? 'FastAPI 서버가 클라우드에 배포되지 않았거나 접근할 수 없습니다.'
+            : 'http://127.0.0.1:8000 서버에 연결할 수 없습니다.',
+          action: 'check_fastapi_deployment'
         },
         { status: 503 }
       );
@@ -65,7 +89,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// OPTIONS 요청 처리 (CORS preflight)
 export async function OPTIONS(request: NextRequest) {
   return new Response(null, {
     status: 200,
