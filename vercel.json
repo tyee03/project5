@@ -4,10 +4,10 @@
       "runtime": "python3.9"
     }
   },
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/backend/(.*)",
-      "destination": "/backend/main.py"
+      "src": "/api/backend/(.*)",
+      "dest": "/backend/main.py"
     }
   ]
 }
