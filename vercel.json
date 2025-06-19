@@ -1,13 +1,12 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "backend/main.py": {
-      "runtime": "vercel-python@3.9"
+      "runtime": "python3.9"
     }
   },
   "rewrites": [
     {
-      "source": "/api/(.*)",
+      "source": "/api/backend/(.*)",
       "destination": "/backend/main.py"
     }
   ]
