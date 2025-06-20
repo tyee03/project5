@@ -256,22 +256,6 @@ export function ForecastChart({
           </CardDescription>
         </div>
         <div className="mt-4 flex w-full flex-col gap-2 @md:ml-auto @md:mt-0 @md:w-auto @md:flex-row">
-          {/* 회사 규모 필터 추가 */}
-          {onSizeFilterChange && (
-            <ToggleGroup
-              type="single"
-              value={sizeFilter || "all"}
-              onValueChange={(value) => { if (value) onSizeFilterChange(value); }}
-              variant="outline"
-              aria-label="회사 규모 필터"
-              className="@md:w-auto"
-            >
-              <ToggleGroupItem value="all" aria-label="전체 보기">전체</ToggleGroupItem>
-              <ToggleGroupItem value="대기업" aria-label="대기업만 보기">대기업</ToggleGroupItem>
-              <ToggleGroupItem value="중소기업" aria-label="중소기업만 보기">중소기업</ToggleGroupItem>
-            </ToggleGroup>
-          )}
-          
           <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="w-full @md:w-[180px]">
               <SelectValue placeholder="기간 선택" />
@@ -290,6 +274,23 @@ export function ForecastChart({
             onSelect={onCompanyChange}
           />
         </div>
+        
+        {/* 회사 규모 필터를 별도 행에 배치 */}
+        {onSizeFilterChange && (
+          <div className="mt-4 flex justify-center">
+            <ToggleGroup
+              type="single"
+              value={sizeFilter || "all"}
+              onValueChange={(value) => { if (value) onSizeFilterChange(value); }}
+              variant="outline"
+              aria-label="회사 규모 필터"
+            >
+              <ToggleGroupItem value="all" aria-label="전체 보기">전체</ToggleGroupItem>
+              <ToggleGroupItem value="대기업" aria-label="대기업만 보기">대기업</ToggleGroupItem>
+              <ToggleGroupItem value="중소기업" aria-label="중소기업만 보기">중소기업</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+        )}
       </CardHeader>
       <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
         <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
