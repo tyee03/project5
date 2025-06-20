@@ -533,7 +533,7 @@ export function DataTable({
     // ... 나머지 컬럼들은 이전 아티팩트와 동일
   ];
 
-  // ✨ 기존 상세 예측 데이터 테이블 컬럼들 (기존 컬럼들과 유사하지만 probability 컬럼 추가)
+  // ✨ 기존 상세 예측 데이터 테이블 컬럼들에 MAPE, 모델 등 추가
   const columns: ColumnDef<Forecast>[] = [
     { id: "drag", header: () => null, cell: ({ row }) => <DragHandle id={row.original.cofId} /> },
     {
@@ -610,17 +610,84 @@ export function DataTable({
         );
       },
     },
-    // ... 나머지 기존 컬럼들 (MAPE, Model, etc.)
+    {
+      accessorKey: "mape",
+      header: () => <div className="text-center">MAPE (%)</div>,
+      cell: ({ row }) => {
+        const mapeValue = row.getValue("mape");
+        if (typeof mapeValue !== 'number' || isNaN(mapeValue)) {
+          return <div className="flex justify-center"><Badge variant="secondary">N/A</Badge></div>;
+        }
+        const mape = mapeValue * 100;
+        const variant = mape < 10 ? "secondary" : mape < 25 ? "outline" : "destructive";
+        return (
+          <div className="flex justify-center">
+            <Badge variant={variant}>{mape.toFixed(2)}%</Badge>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "predictionModel",
+      header: "예측 모델",
+      cell: ({ row }) => {
+        const modelName = String(row.getValue("predictionModel"));
+        return (
+          <div className="flex justify-center">
+            <Badge className={getModelBadgeClassName(modelName.split(' (')[0])}>
+              {modelName}
+            </Badge>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "forecastGenerationDate",
+      header: "생성일시",
+      cell: ({ row }) => new Date(row.getValue("forecastGenerationDate")).toLocaleString("ko-KR"),
+    },
+    {
+      id: "actions",
+      cell: ({ row }) => (
+        <div className="text-center">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0"><MoreVerticalIcon className="h-4 w-4" /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => handleOpenEditSheet(row)}><Edit className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-red-500 focus:text-red-500 focus:bg-red-100" onSelect={() => handleDeleteRow(row.original.cofId)}><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+    },
   ];
 
-  // ✨ 두 가지 테이블 중 어떤 것을 표시할지 결정
+  // ✨ 두 가지 테이블 중 어떤 것을 표시할지 결정 - 기본적으로 커스터머 요약 표시
   const showCustomerSummary = !selectedCustomerId;
-  const currentData = showCustomerSummary ? customerSummaries : selectedCustomerForecasts;
-  const currentColumns = showCustomerSummary ? customerSummaryColumns : columns;
+  
+  // ✨ 기본적으로 커스터머 요약 데이터를 표시, 필요시 기존 테이블 데이터도 사용 가능
+  const tableData = React.useMemo(() => {
+    if (showCustomerSummary) {
+      return customerSummaries;
+    } else {
+      return selectedCustomerForecasts;
+    }
+  }, [showCustomerSummary, customerSummaries, selectedCustomerForecasts]);
+
+  const tableColumns = React.useMemo(() => {
+    if (showCustomerSummary) {
+      return customerSummaryColumns;
+    } else {
+      return columns;
+    }
+  }, [showCustomerSummary, customerSummaryColumns, columns]);
 
   const table = useReactTable({
-    data: currentData as any,
-    columns: currentColumns as any,
+    data: tableData as any,
+    columns: tableColumns as any,
     state: { sorting, columnVisibility, rowSelection, columnFilters, pagination },
     onSortingChange: setSorting,
     getRowId: (row) => showCustomerSummary ? (row as CustomerSummary).customerId.toString() : (row as Forecast).cofId.toString(),
