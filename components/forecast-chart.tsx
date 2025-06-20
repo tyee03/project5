@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 export type Forecast = {
   predictedDate: string; // "YYYY-MM-DDTHH:MM:SS" 형식 (예측 날짜)
   predictedQuantity: number;
+  probability?: number | null;
 };
 
 export type ActualSales = {
