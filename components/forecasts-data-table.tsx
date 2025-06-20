@@ -669,14 +669,74 @@ export function DataTable({
   const showCustomerSummary = !selectedCustomerId;
   
   // ✨ 기본적으로 커스터머 요약 데이터를 표시, 필요시 기존 테이블 데이터도 사용 가능
-  const tableData = React.useMemo(() => {
-    if (showCustomerSummary) {
-      return customerSummaries;
-    } else {
-      return selectedCustomerForecasts;
-    }
-  }, [showCustomerSummary, customerSummaries, selectedCustomerForecasts]);
+  const tableData = React.useMemo<Forecast[]>(() => {
+  // 커스터머별로 그룹핑하여 요약 데이터 생성
+  const customerMap = new Map<number, {
+    forecasts: Forecast[];
+    companyInfo: { name: string | null; customerName: string | null; size: string | null };
+  }>();
 
+  // 모든 예측 데이터를 커스터머별로 그룹핑
+  data.forEach(forecast => {
+    const existingCustomer = customerMap.get(forecast.customerId);
+    if (existingCustomer) {
+      existingCustomer.forecasts.push(forecast);
+    } else {
+      customerMap.set(forecast.customerId, {
+        forecasts: [forecast],
+        companyInfo: {
+          name: forecast.companyName,
+          customerName: forecast.customerName,
+          size: forecast.companySize
+        }
+      });
+    }
+  });
+
+  // 각 고객별로 요약 데이터 생성 (최신 예측 + 평균값)
+  const summaryData: Forecast[] = Array.from(customerMap.entries()).map(([customerId, { forecasts, companyInfo }]) => {
+    // 가장 최신 예측 데이터
+    const latestForecast = forecasts.sort((a, b) => new Date(b.predictedDate).getTime() - new Date(a.predictedDate).getTime())[0];
+    
+    // 평균값 계산
+    const avgQuantity = forecasts.reduce((sum, f) => sum + f.predictedQuantity, 0) / forecasts.length;
+    const probabilityValues = forecasts.filter(f => f.probability !== null && f.probability !== undefined).map(f => f.probability!);
+    const avgProbability = probabilityValues.length > 0 
+      ? probabilityValues.reduce((sum, p) => sum + p, 0) / probabilityValues.length 
+      : null;
+    const mapeValues = forecasts.filter(f => f.mape !== null && f.mape !== undefined).map(f => f.mape!);
+    const avgMape = mapeValues.length > 0 
+      ? mapeValues.reduce((sum, m) => sum + m, 0) / mapeValues.length 
+      : null;
+
+    // 가장 많이 사용된 모델
+    const modelCounts = forecasts.reduce((acc, f) => {
+      acc[f.predictionModel] = (acc[f.predictionModel] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const primaryModel = Object.entries(modelCounts).sort(([,a], [,b]) => b - a)[0][0];
+
+    return {
+      cofId: latestForecast.cofId,
+      customerId: customerId,
+      companyName: companyInfo.name,
+      customerName: companyInfo.customerName,
+      companySize: companyInfo.size,
+      predictedDate: latestForecast.predictedDate,
+      predictedQuantity: Math.round(avgQuantity), // 평균값 사용
+      mape: avgMape,
+      predictionModel: `${primaryModel} (${forecasts.length}건)`, // 모델명 + 건수
+      probability: avgProbability,
+      forecastGenerationDate: latestForecast.forecastGenerationDate
+    } as Forecast;
+  });
+
+  return summaryData.sort((a, b) => {
+    const aName = a.companyName || a.customerName || `Customer ${a.customerId}`;
+    const bName = b.companyName || b.customerName || `Customer ${b.customerId}`;
+    return aName.localeCompare(bName);
+  });
+}, [data]);
   const tableColumns = React.useMemo(() => {
     if (showCustomerSummary) {
       return customerSummaryColumns;
