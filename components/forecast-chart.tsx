@@ -1,4 +1,4 @@
-// forecast-chart.tsx
+// forecast-chart.tsx - 수정된 버전
 
 "use client"
 
@@ -13,14 +13,13 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { type ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart"
 
-// 날짜 관련 유틸리티 (date-fns 및 shadcn/ui calendar)
+// 날짜 관련 유틸리티
 import { format } from "date-fns"
 import { Calendar as CalendarIcon } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
-// 기간 선택 드롭다운 (shadcn/ui select)
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-// API 응답 타입과 일치하도록 정의
+// API 응답 타입
 export type Forecast = {
   predictedDate: string; // "YYYY-MM-DDTHH:MM:SS" 형식 (예측 날짜)
   predictedQuantity: number;
@@ -37,18 +36,13 @@ export type Company = {
   companySize: string | null;
 };
 
-// API의 최종 응답 타입 (ForecastChart 컴포넌트의 부모 컴포넌트가 이 타입을 전달해야 함)
-export type CustomerChartData = { // API의 CustomerForecastResponse와 동일
-    customerId: number;
-    companyName: string | null;
-    customerName: string | null;
-    companySize: string | null;
-    forecasts: Forecast[]; // 미래 예측 데이터 배열
-    actualSales: ActualSales[]; // 과거 실제 매출 데이터 배열
-}
+// 차트 설정
+const chartConfig = {
+  predictedQuantity: { label: "예측 수량 (월별)", color: "hsl(var(--chart-1))" },
+  actualSalesMonthly: { label: "실제 수량 (월별)", color: "hsl(var(--chart-2))" },
+} satisfies ChartConfig
 
-
-// 회사 검색 콤보박스 컴포넌트
+// 회사 검색 콤보박스 컴포넌트 (기존과 동일)
 function CompanySearchCombobox({
   companies,
   value,
@@ -92,7 +86,6 @@ function CompanySearchCombobox({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      {/* PopoverContent가 PopoverTrigger의 자식으로 있도록 수정되었음 */}
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
         <Command filter={commandFilter}>
           <CommandInput placeholder="회사명 또는 규모로 검색..." />
@@ -122,7 +115,7 @@ function CompanySearchCombobox({
   )
 }
 
-// 날짜 범위 선택기 컴포넌트
+// 날짜 범위 선택기 컴포넌트 (기존과 동일)
 interface DateRangePickerProps {
   selectedRange: { from: Date | undefined; to: Date | undefined } | undefined;
   onSelectRange: (range: { from: Date | undefined; to: Date | undefined } | undefined) => void;
@@ -170,19 +163,12 @@ function DateRangePicker({ selectedRange, onSelectRange, className }: DateRangeP
   );
 }
 
-// 차트 설정: 예측 수량과 실제 수량 각각의 라벨과 색상 정의
-const chartConfig = {
-  predictedQuantity: { label: "예측 수량", color: "hsl(var(--chart-1))" }, // 예측 라인 색상
-  actualSales: { label: "실제 수량", color: "hsl(var(--chart-2))" }, // 실제 매출 라인 색상
-} satisfies ChartConfig
-
 export function ForecastChart({
   allCompanies,
   selectedCompanyId,
   onCompanyChange,
-  // API에서 전달받는 두 개의 배열을 직접 받습니다.
-  forecastData,    // Forecast[] 타입
-  actualSalesData  // ActualSales[] 타입
+  forecastData,
+  actualSalesData
 }: {
   allCompanies: Company[];
   selectedCompanyId: string | null;
@@ -193,58 +179,76 @@ export function ForecastChart({
   const [selectedRange, setSelectedRange] = React.useState<{ from: Date | undefined; to: Date | undefined } | undefined>(undefined);
   const [period, setPeriod] = React.useState<string>("12months"); 
 
-  // ✨ 디버깅을 위한 콘솔 로그 추가
-  React.useEffect(() => {
-    console.log("ForecastChart received forecastData:", forecastData);
-    console.log("ForecastChart received actualSalesData:", actualSalesData);
-  }, [forecastData, actualSalesData]);
+  // 🔥 핵심 수정: 일별 매출을 월별로 집계
+  const monthlyActualSales = React.useMemo(() => {
+    console.log("Original actualSalesData:", actualSalesData);
+    
+    if (!actualSalesData || !Array.isArray(actualSalesData)) {
+      return [];
+    }
 
+    // 월별로 그룹화하여 합계 계산
+    const monthlyMap = new Map<string, number>();
+    
+    actualSalesData.forEach(item => {
+      // "2024-12-15" -> "2024-12-01" (월 첫날로 변환)
+      const date = new Date(item.date);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+      
+      const currentSum = monthlyMap.get(monthKey) || 0;
+      monthlyMap.set(monthKey, currentSum + (item.quantity || 0));
+    });
 
-  // 예측 데이터와 실제 매출 데이터를 하나의 배열로 병합합니다.
-  // X축에 사용할 'date' 키를 통일하고, 해당 날짜에 예측/실제 값이 있으면 채웁니다.
+    const result = Array.from(monthlyMap.entries()).map(([date, quantity]) => ({
+      date,
+      quantity
+    })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    console.log("Monthly aggregated actualSales:", result);
+    return result;
+  }, [actualSalesData]);
+
+  // 🔥 핵심 수정: 예측과 실제 매출을 모두 월별 기준으로 결합
   const combinedChartData = React.useMemo(() => {
-    const dataMap = new Map<string, { predictedQuantity?: number; actualSales?: number }>();
+    const dataMap = new Map<string, { predictedQuantity?: number; actualSalesMonthly?: number }>();
 
-    // ✨ forecastData가 유효한 배열일 때만 forEach를 실행합니다.
+    // 예측 데이터 추가 (이미 월별)
     if (forecastData && Array.isArray(forecastData)) {
       forecastData.forEach(item => {
         const dateKey = item.predictedDate.split('T')[0];
-        dataMap.set(dateKey, { ...dataMap.get(dateKey), predictedQuantity: item.predictedQuantity });
+        dataMap.set(dateKey, { 
+          ...dataMap.get(dateKey), 
+          predictedQuantity: item.predictedQuantity 
+        });
       });
     }
 
-    // ✨ actualSalesData가 유효한 배열일 때만 forEach를 실행합니다.
-    if (actualSalesData && Array.isArray(actualSalesData)) {
-      actualSalesData.forEach(item => {
-        const dateKey = item.date;
-        dataMap.set(dateKey, { ...dataMap.get(dateKey), actualSales: item.quantity });
+    // 월별 집계된 실제 매출 데이터 추가
+    monthlyActualSales.forEach(item => {
+      dataMap.set(item.date, { 
+        ...dataMap.get(item.date), 
+        actualSalesMonthly: item.quantity 
       });
-    }
+    });
 
     const sortedData = Array.from(dataMap.entries())
       .map(([date, values]) => ({
         date: date,
-        // ✨ predictedQuantity가 null이면 0으로, 아니면 값 그대로 사용
-        predictedQuantity: values.predictedQuantity === null ? 0 : values.predictedQuantity, 
-        // ✨ actualSales가 null이면 0으로, 아니면 값 그대로 사용
-        actualSales: values.actualSales === null ? 0 : values.actualSales, 
+        predictedQuantity: values.predictedQuantity || 0,
+        actualSalesMonthly: values.actualSalesMonthly || 0,
       }))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
-    console.log("Combined Chart Data:", sortedData);
-
+    console.log("Combined Chart Data (월별 기준):", sortedData);
     return sortedData;
-  }, [forecastData, actualSalesData]); // 의존성 배열은 그대로 유지
+  }, [forecastData, monthlyActualSales]);
 
-
-  // 날짜 범위 필터링 (combinedChartData를 필터링)
+  // 날짜 범위 필터링
   const filteredCombinedChartData = React.useMemo(() => {
     if (!selectedRange?.from && !selectedRange?.to) {
-      // 날짜 범위가 지정되지 않은 경우, 전체 병합 데이터를 반환
       return combinedChartData; 
     }
 
-    // 선택된 날짜 범위의 시작과 끝 시간을 설정 (시간까지 고려하여 정확한 범위 필터링)
     const fromTime = selectedRange.from ? new Date(selectedRange.from.setHours(0,0,0,0)).getTime() : -Infinity;
     const toTime = selectedRange.to ? new Date(selectedRange.to.setHours(23,59,59,999)).getTime() : Infinity;
 
@@ -253,52 +257,48 @@ export function ForecastChart({
       return date >= fromTime && date <= toTime;
     });
 
-    // ✨ 디버깅을 위한 콘솔 로그 추가
     console.log("Filtered Combined Chart Data:", filteredData);
-
     return filteredData;
   }, [combinedChartData, selectedRange]);
 
-  // 기간 선택 드롭다운 변경 핸들러
+  // 기간 선택 핸들러
   const handlePeriodChange = (value: string) => {
-  setPeriod(value);
-  const today = new Date();
-  let fromDate: Date | undefined;
-  let toDate: Date | undefined; // ✨ toDate의 초기값을 undefined로 변경
+    setPeriod(value);
+    const today = new Date();
+    let fromDate: Date | undefined;
+    let toDate: Date | undefined;
 
-  switch (value) {
-    case "6months":
-      fromDate = new Date(today.getFullYear(), today.getMonth() - 6, today.getDate());
-      // ✨ 종료일을 미래로 넉넉하게 설정 (예: 5년 후)
-      toDate = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
-      break;
-    case "12months":
-      fromDate = new Date(today.getFullYear(), today.getMonth() - 12, today.getDate());
-      // ✨ 종료일을 미래로 넉넉하게 설정
-      toDate = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
-      break;
-    case "24months":
-      fromDate = new Date(today.getFullYear(), today.getMonth() - 24, today.getDate());
-      // ✨ 종료일을 미래로 넉넉하게 설정
-      toDate = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
-      break;
-    case "all":
-    default:
-      // "전체 기간"은 시작과 끝을 모두 undefined로 설정하여 필터링하지 않음
-      fromDate = undefined; 
-      toDate = undefined; 
-      break;
-  }
-  setSelectedRange({ from: fromDate, to: toDate });
-};
-
+    switch (value) {
+      case "6months":
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 6, today.getDate());
+        toDate = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
+        break;
+      case "12months":
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 12, today.getDate());
+        toDate = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
+        break;
+      case "24months":
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 24, today.getDate());
+        toDate = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
+        break;
+      case "all":
+      default:
+        fromDate = undefined; 
+        toDate = undefined; 
+        break;
+    }
+    setSelectedRange({ from: fromDate, to: toDate });
+  };
 
   return (
     <Card>
       <CardHeader className="relative flex-col items-start @md:flex-row @md:items-center">
         <div>
-          <CardTitle>주문량 예측 추이</CardTitle>
-          <CardDescription>선택된 회사의 월별 주문 예측 및 실제 수량 추이입니다.</CardDescription>
+          <CardTitle>주문량 예측 추이 (월별 비교)</CardTitle>
+          <CardDescription>
+            선택된 회사의 월별 주문 예측 및 실제 수량 추이입니다. 
+            실제 매출은 일별 데이터를 월별로 집계하여 표시됩니다.
+          </CardDescription>
         </div>
         <div className="mt-4 flex w-full flex-col gap-2 @md:ml-auto @md:mt-0 @md:w-auto @md:flex-row">
           <Select value={period} onValueChange={handlePeriodChange}>
@@ -333,9 +333,9 @@ export function ForecastChart({
                 <stop offset="5%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.8} />
                 <stop offset="95%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.1} />
               </linearGradient>
-              <linearGradient id="fillActualSales" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-actualSales)" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="var(--color-actualSales)" stopOpacity={0.1} />
+              <linearGradient id="fillActualSalesMonthly" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.1} />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} />
@@ -349,14 +349,18 @@ export function ForecastChart({
             />
             <YAxis 
               tickFormatter={(value) => value.toLocaleString()}
-              domain={[(dataMin) => (dataMin < 0 ? dataMin * 1.1 : -10000), (dataMax) => (dataMax > 0 ? dataMax * 1.1 : 10000)]}
+              domain={[(dataMin) => Math.max(0, dataMin * 0.9), (dataMax) => dataMax * 1.1]}
             />
             <Tooltip
               cursor={false}
               content={
                 <ChartTooltipContent
-                  labelFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'long', day: 'numeric' })}
+                  labelFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'long' })}
                   indicator="dot"
+                  formatter={(value, name) => [
+                    `${Number(value).toLocaleString()}원`,
+                    name === "predictedQuantity" ? "예측 수량 (월별)" : "실제 수량 (월별)"
+                  ]}
                 />
               }
             />
@@ -396,12 +400,12 @@ export function ForecastChart({
               fill="url(#fillPredictedQuantity)"
               stroke="var(--color-predictedQuantity)"
             />
-            {/* 실제 수량 Area */}
+            {/* 실제 수량 Area (월별 집계) */}
             <Area 
-              dataKey="actualSales" 
+              dataKey="actualSalesMonthly" 
               type="natural" 
-              fill="url(#fillActualSales)" 
-              stroke="var(--color-actualSales)" 
+              fill="url(#fillActualSalesMonthly)" 
+              stroke="var(--color-actualSalesMonthly)" 
             />
           </AreaChart>
         </ChartContainer>
