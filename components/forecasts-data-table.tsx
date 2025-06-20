@@ -393,7 +393,7 @@ export function DataTable({
 
   React.useEffect(() => { setData(initialData); }, [initialData]);
 
-  // ✨ 커스터머 요약 테이블 컬럼
+  // ✨ 커스터머 요약 테이블 컬럼 (완성)
   const customerSummaryColumns: ColumnDef<CustomerSummary>[] = [
     {
       id: "select",
@@ -430,26 +430,106 @@ export function DataTable({
       cell: ({ row }) => {
         const customer = row.original;
         const displayName = customer.companyName || customer.customerName || `Customer ${customer.customerId}`;
-        const isSelected = selectedCustomerId === String(customer.customerId);
         
         return (
-          <Button 
-            variant={isSelected ? "default" : "ghost"} 
-            className="justify-start font-normal h-auto p-2"
-            onClick={() => onCustomerSelect(isSelected ? null : String(customer.customerId))}
-          >
-            <div className="flex flex-col items-start">
-              <span className="font-medium">{displayName}</span>
-              {customer.companySize && (
-                <Badge variant="outline" className="mt-1 text-xs">
-                  {customer.companySize}
-                </Badge>
-              )}
-            </div>
-          </Button>
+          <div className="flex flex-col items-start">
+            <span className="font-medium">{displayName}</span>
+            {customer.companySize && (
+              <Badge variant="outline" className="mt-1 text-xs">
+                {customer.companySize}
+              </Badge>
+            )}
+          </div>
         );
       },
     },
+    {
+      accessorKey: "totalForecasts",
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+          예측 건수
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      ),
+      cell: ({ row }) => (
+        <div className="text-center">
+          <Badge variant="secondary">{row.getValue("totalForecasts")}</Badge>
+        </div>
+      ),
+    },
+    {
+      accessorKey: "latestForecastDate",
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+          <Calendar className="mr-2 h-4 w-4" />
+          최신 예측일
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      ),
+      cell: ({ row }) => (
+        <div className="text-center">
+          {new Date(row.getValue("latestForecastDate")).toLocaleDateString("ko-KR", {
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric'
+          })}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "avgPredictedQuantity",
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+          <TrendingUp className="mr-2 h-4 w-4" />
+          평균 예측량
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      ),
+      cell: ({ row }) => (
+        <div className="text-right font-mono">
+          {Math.round(row.getValue("avgPredictedQuantity")).toLocaleString()}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "avgProbability",
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+          평균 구매확률
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      ),
+      cell: ({ row }) => {
+        const probability = row.getValue("avgProbability") as number | null;
+        if (probability === null || probability === undefined) {
+          return <div className="flex justify-center"><Badge variant="secondary">N/A</Badge></div>;
+        }
+        
+        const percentage = probability * 100;
+        const variant = percentage >= 70 ? "default" : percentage >= 40 ? "secondary" : "destructive";
+        
+        return (
+          <div className="flex justify-center">
+            <Badge variant={variant}>{percentage.toFixed(1)}%</Badge>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "primaryModel",
+      header: "주요 모델",
+      cell: ({ row }) => {
+        const modelName = String(row.getValue("primaryModel"));
+        return (
+          <div className="flex justify-center">
+            <Badge className={getModelBadgeClassName(modelName.split(' (')[0])}>
+              {modelName}
+            </Badge>
+          </div>
+        );
+      },
+    },
+  ];
     // ... 나머지 컬럼들은 이전 아티팩트와 동일
   ];
 
