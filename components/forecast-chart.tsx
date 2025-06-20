@@ -13,6 +13,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { type ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
 // API 응답 타입
 export type Forecast = {
@@ -115,13 +116,17 @@ export function ForecastChart({
   selectedCompanyId,
   onCompanyChange,
   forecastData,
-  actualSalesData
+  actualSalesData,
+  sizeFilter,
+  onSizeFilterChange
 }: {
   allCompanies: Company[];
   selectedCompanyId: string | null;
   onCompanyChange: (id: string) => void;
   forecastData: Forecast[]; 
   actualSalesData: ActualSales[];
+  sizeFilter?: string;
+  onSizeFilterChange?: (value: string) => void;
 }) {
   const [period, setPeriod] = React.useState<string>("12months"); 
 
@@ -251,6 +256,22 @@ export function ForecastChart({
           </CardDescription>
         </div>
         <div className="mt-4 flex w-full flex-col gap-2 @md:ml-auto @md:mt-0 @md:w-auto @md:flex-row">
+          {/* 회사 규모 필터 추가 */}
+          {onSizeFilterChange && (
+            <ToggleGroup
+              type="single"
+              value={sizeFilter || "all"}
+              onValueChange={(value) => { if (value) onSizeFilterChange(value); }}
+              variant="outline"
+              aria-label="회사 규모 필터"
+              className="@md:w-auto"
+            >
+              <ToggleGroupItem value="all" aria-label="전체 보기">전체</ToggleGroupItem>
+              <ToggleGroupItem value="대기업" aria-label="대기업만 보기">대기업</ToggleGroupItem>
+              <ToggleGroupItem value="중소기업" aria-label="중소기업만 보기">중소기업</ToggleGroupItem>
+            </ToggleGroup>
+          )}
+          
           <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="w-full @md:w-[180px]">
               <SelectValue placeholder="기간 선택" />
