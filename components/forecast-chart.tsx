@@ -1,4 +1,4 @@
-// forecast-chart.tsx - 수정된 버전
+// forecast-chart.tsx - 날짜 범위 선택기 제거 및 회사 규모별 필터링 강화
 
 "use client"
 
@@ -12,11 +12,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { type ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart"
-
-// 날짜 관련 유틸리티
-import { format } from "date-fns"
-import { Calendar as CalendarIcon } from "lucide-react"
-import { Calendar } from "@/components/ui/calendar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // API 응답 타입
@@ -42,7 +37,7 @@ const chartConfig = {
   actualSalesMonthly: { label: "실제 수량 (월별)", color: "hsl(var(--chart-2))" },
 } satisfies ChartConfig
 
-// 회사 검색 콤보박스 컴포넌트 (기존과 동일)
+// 회사 검색 콤보박스 컴포넌트
 function CompanySearchCombobox({
   companies,
   value,
@@ -115,54 +110,6 @@ function CompanySearchCombobox({
   )
 }
 
-// 날짜 범위 선택기 컴포넌트 (기존과 동일)
-interface DateRangePickerProps {
-  selectedRange: { from: Date | undefined; to: Date | undefined } | undefined;
-  onSelectRange: (range: { from: Date | undefined; to: Date | undefined } | undefined) => void;
-  className?: string;
-}
-
-function DateRangePicker({ selectedRange, onSelectRange, className }: DateRangePickerProps) {
-  const displayValue = selectedRange?.from ? (
-    selectedRange.to ? (
-      `${format(selectedRange.from, "yyyy년 MM월 dd일")} - ${format(selectedRange.to, "yyyy년 MM월 dd일")}`
-    ) : (
-      format(selectedRange.from, "yyyy년 MM월 dd일")
-    )
-  ) : (
-    "날짜 범위 선택"
-  );
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          id="date"
-          variant={"outline"}
-          className={cn(
-            "w-full justify-start text-left font-normal @md:w-[280px]",
-            !selectedRange && "text-muted-foreground",
-            className
-          )}
-        >
-          <CalendarIcon className="mr-2 h-4 w-4" />
-          {displayValue}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <Calendar
-          initialFocus
-          mode="range"
-          defaultMonth={selectedRange?.from}
-          selected={selectedRange}
-          onSelect={onSelectRange}
-          numberOfMonths={2}
-        />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 export function ForecastChart({
   allCompanies,
   selectedCompanyId,
@@ -176,10 +123,9 @@ export function ForecastChart({
   forecastData: Forecast[]; 
   actualSalesData: ActualSales[];
 }) {
-  const [selectedRange, setSelectedRange] = React.useState<{ from: Date | undefined; to: Date | undefined } | undefined>(undefined);
   const [period, setPeriod] = React.useState<string>("12months"); 
 
-  // 🔥 핵심 수정: 일별 매출을 월별로 집계
+  // 일별 매출을 월별로 집계
   const monthlyActualSales = React.useMemo(() => {
     console.log("Original actualSalesData:", actualSalesData);
     
@@ -208,7 +154,7 @@ export function ForecastChart({
     return result;
   }, [actualSalesData]);
 
-  // 🔥 핵심 수정: 예측과 실제 매출을 모두 월별 기준으로 결합
+  // 예측과 실제 매출을 모두 월별 기준으로 결합
   const combinedChartData = React.useMemo(() => {
     const dataMap = new Map<string, { predictedQuantity?: number; actualSalesMonthly?: number }>();
 
@@ -243,32 +189,17 @@ export function ForecastChart({
     return sortedData;
   }, [forecastData, monthlyActualSales]);
 
-  // 날짜 범위 필터링
+  // 기간별 필터링된 차트 데이터
   const filteredCombinedChartData = React.useMemo(() => {
-    if (!selectedRange?.from && !selectedRange?.to) {
-      return combinedChartData; 
+    if (period === "all") {
+      return combinedChartData;
     }
 
-    const fromTime = selectedRange.from ? new Date(selectedRange.from.setHours(0,0,0,0)).getTime() : -Infinity;
-    const toTime = selectedRange.to ? new Date(selectedRange.to.setHours(23,59,59,999)).getTime() : Infinity;
-
-    const filteredData = combinedChartData.filter(d => {
-      const date = new Date(d.date).getTime(); 
-      return date >= fromTime && date <= toTime;
-    });
-
-    console.log("Filtered Combined Chart Data:", filteredData);
-    return filteredData;
-  }, [combinedChartData, selectedRange]);
-
-  // 기간 선택 핸들러
-  const handlePeriodChange = (value: string) => {
-    setPeriod(value);
     const today = new Date();
-    let fromDate: Date | undefined;
-    let toDate: Date | undefined;
+    let fromDate: Date;
+    let toDate: Date;
 
-    switch (value) {
+    switch (period) {
       case "6months":
         fromDate = new Date(today.getFullYear(), today.getMonth() - 6, today.getDate());
         toDate = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
@@ -281,14 +212,33 @@ export function ForecastChart({
         fromDate = new Date(today.getFullYear(), today.getMonth() - 24, today.getDate());
         toDate = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
         break;
-      case "all":
       default:
-        fromDate = undefined; 
-        toDate = undefined; 
-        break;
+        return combinedChartData;
     }
-    setSelectedRange({ from: fromDate, to: toDate });
-  };
+
+    const fromTime = fromDate.getTime();
+    const toTime = toDate.getTime();
+
+    const filteredData = combinedChartData.filter(d => {
+      const date = new Date(d.date).getTime(); 
+      return date >= fromTime && date <= toTime;
+    });
+
+    console.log("Filtered Combined Chart Data:", filteredData);
+    return filteredData;
+  }, [combinedChartData, period]);
+
+  // 선택된 회사 정보 표시
+  const selectedCompanyInfo = React.useMemo(() => {
+    if (selectedCompanyId === "all") {
+      return "전체 회사";
+    }
+    const company = allCompanies.find(c => String(c.customerId) === selectedCompanyId);
+    if (!company) return "회사 정보 없음";
+    
+    const name = company.companyName || `Customer ${company.customerId}`;
+    return company.companySize ? `${name} (${company.companySize})` : name;
+  }, [selectedCompanyId, allCompanies]);
 
   return (
     <Card>
@@ -296,12 +246,12 @@ export function ForecastChart({
         <div>
           <CardTitle>주문량 예측 추이 (월별 비교)</CardTitle>
           <CardDescription>
-            선택된 회사의 월별 주문 예측 및 실제 수량 추이입니다. 
+            {selectedCompanyInfo}의 월별 주문 예측 및 실제 수량 추이입니다. 
             실제 매출은 일별 데이터를 월별로 집계하여 표시됩니다.
           </CardDescription>
         </div>
         <div className="mt-4 flex w-full flex-col gap-2 @md:ml-auto @md:mt-0 @md:w-auto @md:flex-row">
-          <Select value={period} onValueChange={handlePeriodChange}>
+          <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="w-full @md:w-[180px]">
               <SelectValue placeholder="기간 선택" />
             </SelectTrigger>
@@ -312,11 +262,6 @@ export function ForecastChart({
               <SelectItem value="24months">최근 24개월</SelectItem>
             </SelectContent>
           </Select>
-
-          <DateRangePicker 
-            selectedRange={selectedRange} 
-            onSelectRange={setSelectedRange} 
-          />
 
           <CompanySearchCombobox
             companies={allCompanies}
