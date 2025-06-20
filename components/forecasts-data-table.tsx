@@ -1,3 +1,7 @@
+// =================================================================
+// 1. components/forecasts-data-table.tsx - 완전 수정본
+// =================================================================
+
 "use client"
 
 import * as React from "react"
@@ -66,6 +70,7 @@ import {
 } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
+// ✨ 스키마에 probability 추가
 export const schema = z.object({
   cofId: z.number(),
   customerId: z.number(),
@@ -75,6 +80,7 @@ export const schema = z.object({
   predictedQuantity: z.number(),
   mape: z.number().nullable(),
   predictionModel: z.string(),
+  probability: z.number().nullable(), // ✨ 새로 추가
   forecastGenerationDate: z.string(),
 })
 
@@ -90,6 +96,7 @@ function DragHandle({ id }: { id: number }) {
   )
 }
 
+// ✨ 편집 시트에 probability 필드 추가
 function ForecastDetailSheet({
   isOpen,
   onOpenChange,
@@ -133,6 +140,13 @@ function ForecastDetailSheet({
                   <Input name="predictionModel" defaultValue={item.predictionModel} />
                 </div>
             </div>
+            {/* ✨ 확률 필드 추가 */}
+            <div className="grid grid-cols-1 gap-4">
+                <div className="flex flex-col gap-3">
+                  <Label htmlFor="probability">Purchase Probability (0-1)</Label>
+                  <Input name="probability" defaultValue={item.probability ?? ''} type="number" step="0.01" min="0" max="1" placeholder="0.0 - 1.0" />
+                </div>
+            </div>
           </div>
           <SheetFooter>
             <Button type="submit" className="w-full">Save Changes</Button>
@@ -143,10 +157,23 @@ function ForecastDetailSheet({
   )
 }
 
+// ✨ 모델 배지 스타일에 Event-Driven 추가
 const getModelBadgeClassName = (modelName: string): string => {
+  // 특정 모델에 대한 고정 색상
+  const specificColors: { [key: string]: string } = {
+    "Prophet": "border-transparent bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900/80 dark:text-blue-50 dark:hover:bg-blue-900",
+    "ARIMA": "border-transparent bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-900/80 dark:text-emerald-50 dark:hover:bg-emerald-900",
+    "Event-Driven (Logistic)": "border-transparent bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/80 dark:text-purple-50 dark:hover:bg-purple-900",
+    "Data Insufficient": "border-transparent bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-900/80 dark:text-gray-50 dark:hover:bg-gray-900",
+    "Prediction Failed": "border-transparent bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900/80 dark:text-red-50 dark:hover:bg-red-900",
+  };
+
+  if (specificColors[modelName]) {
+    return specificColors[modelName];
+  }
+
+  // 기본 색상 배열 (기존 로직)
   const modelColorClasses = [
-    "border-transparent bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900/80 dark:text-blue-50 dark:hover:bg-blue-900",
-    "border-transparent bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-900/80 dark:text-emerald-50 dark:hover:bg-emerald-900",
     "border-transparent bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/80 dark:text-amber-50 dark:hover:bg-amber-900",
   ];
   let hash = 0;
@@ -177,7 +204,6 @@ function DraggableRow({ row }: { row: Row<Forecast> }) {
   )
 }
 
-// ✨ 1. DataTable의 props 인터페이스에 onRunForecast와 isForecasting을 추가
 export function DataTable({
   data: initialData,
   onRunForecast,
@@ -215,6 +241,7 @@ export function DataTable({
     }
   };
 
+  // ✨ 저장 함수에 probability 추가
   const handleSaveChanges = async (event: React.FormEvent<HTMLFormElement>, cofId: number) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -223,6 +250,7 @@ export function DataTable({
       predictedQuantity: Number(formData.get('predictedQuantity')),
       mape: formData.get('mape') ? Number(formData.get('mape')) : null,
       predictionModel: formData.get('predictionModel') as string,
+      probability: formData.get('probability') ? Number(formData.get('probability')) : null, // ✨ 새로 추가
     };
 
     try {
@@ -235,7 +263,7 @@ export function DataTable({
       if (response.status === 204) {
         setData(prevData =>
           prevData.map(row =>
-            row.cofId === cofId ? { ...row, ...updatedData, mape: updatedData.mape ?? row.mape } : row
+            row.cofId === cofId ? { ...row, ...updatedData, mape: updatedData.mape ?? row.mape, probability: updatedData.probability ?? row.probability } : row
           )
         );
         setIsSheetOpen(false);
@@ -250,6 +278,7 @@ export function DataTable({
 
   React.useEffect(() => { setData(initialData); }, [initialData]);
 
+  // ✨ 컬럼 정의에 확률 컬럼 추가
   const columns: ColumnDef<Forecast>[] = [
     { id: "drag", header: () => null, cell: ({ row }) => <DragHandle id={row.original.cofId} /> },
     {
@@ -291,6 +320,42 @@ export function DataTable({
         </Button>
       ),
       cell: ({ row }) => <div className="text-right font-mono">{new Intl.NumberFormat().format(row.getValue("predictedQuantity"))}</div>,
+    },
+    // ✨ 새로 추가된 확률 컬럼
+    {
+      accessorKey: "probability",
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+          Purchase Probability
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      ),
+      cell: ({ row }) => {
+        const probability = row.getValue("probability") as number | null;
+        if (probability === null || probability === undefined) {
+          return <div className="flex justify-center"><Badge variant="secondary">N/A</Badge></div>;
+        }
+        
+        // 확률을 퍼센트로 표시
+        const percentage = probability * 100;
+        const variant = percentage >= 70 ? "default" : percentage >= 40 ? "secondary" : "destructive";
+        
+        return (
+          <div className="flex items-center justify-center space-x-2">
+            <Badge variant={variant}>{percentage.toFixed(1)}%</Badge>
+            {/* 시각적 진행 바 */}
+            <div className="w-12 h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-300 ${
+                  percentage >= 70 ? 'bg-green-500' : 
+                  percentage >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+                }`}
+                style={{ width: `${percentage}%` }}
+              />
+            </div>
+          </div>
+        );
+      },
     },
     {
       accessorKey: "mape",
@@ -405,7 +470,6 @@ export function DataTable({
 
   return (
     <div className="space-y-4">
-      {/* ✨ 2. '새 예측 실행' 버튼을 'Export' 버튼 옆에 추가 */}
       <div className="flex items-center gap-2">
         <Button onClick={onRunForecast} disabled={isForecasting}>
           {isForecasting ? "예측 실행 중..." : "새 예측 실행"}
