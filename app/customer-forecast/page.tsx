@@ -4,7 +4,7 @@
 
 import * as React from "react"
 import { Skeleton } from "@/components/ui/skeleton"
-import { CustomerForecastsDataTable, type Forecast } from "@/components/customer-forecasts-data-table"
+import { DataTable, type Forecast } from "@/components/forecasts-data-table"
 import { ForecastChart, type Company, type Forecast as ChartForecastType, type ActualSales as ChartActualSalesType } from "@/components/forecast-chart"
 import { PageHeader } from "@/components/page-header"
 
@@ -257,7 +257,7 @@ export default function CustomerForecastPage() {
           />
           
           {/* ✨ 새로운 테이블 컴포넌트 */}
-          <CustomerForecastsDataTable
+          <DataTable
             data={flatForecastData}
             onRunForecast={handleRunForecast}
             isForecasting={isForecasting}
