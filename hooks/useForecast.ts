@@ -1,58 +1,52 @@
 'use client';
 
-import { DataTable } from '@/components/DataTable';
-import { useForecast } from '@/hooks/useForecast';
-import { useEffect, useState } from 'react';
-import type { Forecast } from '@/components/DataTable';
+import { useState } from 'react';
 
-export default function ForecastPage() {
-  const [data, setData] = useState<Forecast[]>([]);
-  const [loading, setLoading] = useState(true);
-  const { runForecast, isForecasting } = useForecast();
+export function useForecast() {
+  const [isForecasting, setIsForecasting] = useState(false);
 
-  // 데이터 로딩
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await fetch('/api/customer-forecast');
-        if (response.ok) {
-          const result = await response.json();
-          setData(result.data || []);
-        }
-      } catch (error) {
-        console.error('데이터 로딩 실패:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="container mx-auto py-8">
-        <div className="flex justify-center items-center h-64">
-          <div className="text-lg">데이터를 로딩 중입니다...</div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="container mx-auto py-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">예측 관리</h1>
-        <p className="text-muted-foreground mt-2">
-          고객별 수요 예측 데이터를 관리하고 새로운 예측을 실행할 수 있습니다.
-        </p>
-      </div>
+  const runForecast = async () => {
+    setIsForecasting(true);
+    
+    try {
+      console.log('예측 실행 시작...');
       
-      <DataTable 
-        data={data}
-        onRunForecast={runForecast}
-        isForecasting={isForecasting}
-      />
-    </div>
-  );
+      const response = await fetch('/api/trigger-forecast', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('API 응답 상태:', response.status);
+      
+      const result = await response.json();
+      console.log('API 응답 결과:', result);
+
+      if (!response.ok) {
+        throw new Error(result.error || '예측 실행에 실패했습니다');
+      }
+
+      // 성공 알림
+      alert('예측 작업이 시작되었습니다. GitHub Actions에서 실행 중입니다.');
+      
+      // 선택사항: 일정 시간 후 새로고침 제안
+      setTimeout(() => {
+        if (confirm('새로운 예측 결과를 확인하시겠습니까?')) {
+          window.location.reload();
+        }
+      }, 60000); // 1분 후
+
+    } catch (error) {
+      console.error('Forecast execution error:', error);
+      alert(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다');
+    } finally {
+      setIsForecasting(false);
+    }
+  };
+
+  return {
+    runForecast,
+    isForecasting,
+  };
 }
