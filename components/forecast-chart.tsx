@@ -117,16 +117,16 @@ export function ForecastChart({
   onCompanyChange,
   forecastData,
   actualSalesData,
-  sizeFilter,
-  onSizeFilterChange
+  sizeFilters,
+  onSizeFiltersChange
 }: {
   allCompanies: Company[];
   selectedCompanyId: string | null;
   onCompanyChange: (id: string) => void;
   forecastData: Forecast[]; 
   actualSalesData: ActualSales[];
-  sizeFilter?: string;
-  onSizeFilterChange?: (value: string) => void;
+  sizeFilters?: string[];
+  onSizeFiltersChange?: (values: string[]) => void;
 }) {
   const [period, setPeriod] = React.useState<string>("12months"); 
 
@@ -236,14 +236,20 @@ export function ForecastChart({
   // 선택된 회사 정보 표시
   const selectedCompanyInfo = React.useMemo(() => {
     if (selectedCompanyId === "all") {
-      return "전체 회사";
+      if (!sizeFilters || sizeFilters.length === 0) {
+        return "전체 회사";
+      } else if (sizeFilters.length === 3) {
+        return "전체 회사";
+      } else {
+        return `${sizeFilters.join(", ")} 회사`;
+      }
     }
     const company = allCompanies.find(c => String(c.customerId) === selectedCompanyId);
     if (!company) return "회사 정보 없음";
     
     const name = company.companyName || `Customer ${company.customerId}`;
     return company.companySize ? `${name} (${company.companySize})` : name;
-  }, [selectedCompanyId, allCompanies]);
+  }, [selectedCompanyId, allCompanies, sizeFilters]);
 
   return (
     <Card>
@@ -276,18 +282,18 @@ export function ForecastChart({
         </div>
         
         {/* 회사 규모 필터를 별도 행에 배치 */}
-        {onSizeFilterChange && (
+        {onSizeFiltersChange && (
           <div className="mt-4 flex justify-center">
             <ToggleGroup
-              type="single"
-              value={sizeFilter || "all"}
-              onValueChange={(value) => { if (value) onSizeFilterChange(value); }}
+              type="multiple"
+              value={sizeFilters || []}
+              onValueChange={onSizeFiltersChange}
               variant="outline"
               aria-label="회사 규모 필터"
             >
-              <ToggleGroupItem value="all" aria-label="전체 보기">전체</ToggleGroupItem>
-              <ToggleGroupItem value="대기업" aria-label="대기업만 보기">대기업</ToggleGroupItem>
-              <ToggleGroupItem value="중소기업" aria-label="중소기업만 보기">중소기업</ToggleGroupItem>
+              <ToggleGroupItem value="대기업" aria-label="대기업 선택">대기업</ToggleGroupItem>
+              <ToggleGroupItem value="중견기업" aria-label="중견기업 선택">중견기업</ToggleGroupItem>
+              <ToggleGroupItem value="중소기업" aria-label="중소기업 선택">중소기업</ToggleGroupItem>
             </ToggleGroup>
           </div>
         )}
