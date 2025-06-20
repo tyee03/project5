@@ -1,4 +1,4 @@
-// app/customer-forecast/page.tsx
+// app/customer-forecast/page.tsx - 수정된 버전
 
 "use client"
 
@@ -10,17 +10,23 @@ import { ForecastChart, type Company, type Forecast as ChartForecastType, type A
 import { PageHeader } from "@/components/page-header"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
-// API 응답 타입과 동일하게 정의합니다.
-// Forecast와 ActualSales는 forecast-chart.tsx에서 이미 Export되어 있으므로 재정의하지 않습니다.
-// 단, Forecast는 Forecasts-data-table에서도 쓰이고 이름이 겹치므로,
-// ForecastChart에서 쓰는 Forecast와 ActualSales는 별칭을 부여하여 혼동을 피합니다.
-type ApiCustomerForecastResponse = { // API의 CustomerForecastResponse와 일치
+// ✨ API 응답 타입을 PROBABILITY 필드를 포함하도록 수정
+type ApiCustomerForecastResponse = { 
   customerId: number;
   companyName: string | null;
   customerName: string | null;
   companySize: string | null;
-  forecasts: ChartForecastType[]; // ForecastChart에서 쓰는 Forecast 타입
-  actualSales: ChartActualSalesType[]; // ForecastChart에서 쓰는 ActualSales 타입
+  forecasts: (ChartForecastType & { 
+    cofId: number; 
+    customerId: number;
+    companyName: string | null;
+    customerName: string | null;
+    mape: number | null; 
+    predictionModel: string; 
+    probability: number | null; // ✨ 새로 추가
+    forecastGenerationDate: string; 
+  })[]; 
+  actualSales: ChartActualSalesType[];
 };
 
 export default function CustomerForecastPage() {
@@ -178,15 +184,41 @@ export default function CustomerForecastPage() {
   }, [selectedCompanyId, filteredCompanies]);
 
 
-  // 테이블 데이터 계산 시, 필터링된 회사 목록을 사용합니다.
+  // ✨ 테이블 데이터 계산 시 타입 캐스팅 추가
   const tableData = React.useMemo<Forecast[]>(() => {
     if (selectedCompanyId === "all") {
       // '전체 회사' 선택 시 모든 회사의 예측 데이터를 플랫맵합니다.
-      return filteredCompanies.flatMap(company => company.forecasts)
-              .sort((a, b) => new Date(a.predictedDate).getTime() - new Date(b.predictedDate).getTime());
+      return filteredCompanies.flatMap(company => 
+        company.forecasts.map(forecast => ({
+          cofId: forecast.cofId,
+          customerId: forecast.customerId,
+          companyName: forecast.companyName,
+          customerName: forecast.customerName,
+          predictedDate: forecast.predictedDate,
+          predictedQuantity: forecast.predictedQuantity,
+          mape: forecast.mape,
+          predictionModel: forecast.predictionModel,
+          probability: forecast.probability, // ✨ 확률 필드 포함
+          forecastGenerationDate: forecast.forecastGenerationDate
+        } as Forecast))
+      ).sort((a, b) => new Date(a.predictedDate).getTime() - new Date(b.predictedDate).getTime());
     }
+    
     const company = filteredCompanies.find(c => String(c.customerId) === selectedCompanyId);
-    return company?.forecasts.sort((a, b) => new Date(a.predictedDate).getTime() - new Date(b.predictedDate).getTime()) || [];
+    if (!company) return [];
+    
+    return company.forecasts.map(forecast => ({
+      cofId: forecast.cofId,
+      customerId: forecast.customerId,
+      companyName: forecast.companyName,
+      customerName: forecast.customerName,
+      predictedDate: forecast.predictedDate,
+      predictedQuantity: forecast.predictedQuantity,
+      mape: forecast.mape,
+      predictionModel: forecast.predictionModel,
+      probability: forecast.probability, // ✨ 확률 필드 포함
+      forecastGenerationDate: forecast.forecastGenerationDate
+    } as Forecast)).sort((a, b) => new Date(a.predictedDate).getTime() - new Date(b.predictedDate).getTime());
   }, [selectedCompanyId, filteredCompanies]);
 
   const pageTitle = "고객 주문 예측";
