@@ -8,7 +8,6 @@ import { DataTable, type Forecast } from "@/components/forecasts-data-table"
 // ForecastChart와 그에 필요한 타입들을 임포트합니다.
 import { ForecastChart, type Company, type Forecast as ChartForecastType, type ActualSales as ChartActualSalesType } from "@/components/forecast-chart"
 import { PageHeader } from "@/components/page-header"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
 // API 응답 타입과 동일하게 정의합니다.
 // Forecast와 ActualSales는 forecast-chart.tsx에서 이미 Export되어 있으므로 재정의하지 않습니다.
@@ -212,51 +211,23 @@ export default function CustomerForecastPage() {
     );
   }
 
-  // 데이터가 없거나, 필터링 후 표시할 데이터가 없는 경우
-  if (!allForecastData || allForecastData.length === 0 || (selectedCompanyId !== "all" && !chartDataForDisplay.forecasts.length && !chartDataForDisplay.actualSales.length)) {
+  // 데이터가 없는 경우의 UI
+  if (!allForecastData || allForecastData.length === 0) {
     return (
         <div className="container mx-auto p-4 md:p-8 space-y-6">
             <PageHeader title={pageTitle} description={pageDescription} />
             <div className="text-center text-muted-foreground">
-                <p>표시할 데이터가 없습니다. 필터 조건을 변경해 보세요.</p>
-                {/* 필터 UI는 계속 표시 */}
-                <div className="mt-4 flex justify-center">
-                    <ToggleGroup
-                        type="single"
-                        value={sizeFilter}
-                        onValueChange={(value) => { if (value) setSizeFilter(value); }}
-                        variant="outline"
-                        aria-label="회사 규모 필터"
-                    >
-                        <ToggleGroupItem value="all" aria-label="전체 보기">전체</ToggleGroupItem>
-                        <ToggleGroupItem value="대기업" aria-label="대기업만 보기">대기업</ToggleGroupItem>
-                        <ToggleGroupItem value="중소기업" aria-label="중소기업만 보기">중소기업</ToggleGroupItem>
-                    </ToggleGroup>
-                </div>
+                <p>표시할 데이터가 없습니다.</p>
             </div>
         </div>
     );
   }
-
 
   return (
     <>
       <PageHeader
         title={pageTitle}
         description={pageDescription}
-        actions={(
-          <ToggleGroup
-            type="single"
-            value={sizeFilter}
-            onValueChange={(value) => { if (value) setSizeFilter(value); }}
-            variant="outline"
-            aria-label="회사 규모 필터"
-          >
-            <ToggleGroupItem value="all" aria-label="전체 보기">전체</ToggleGroupItem>
-            <ToggleGroupItem value="대기업" aria-label="대기업만 보기">대기업</ToggleGroupItem>
-            <ToggleGroupItem value="중소기업" aria-label="중소기업만 보기">중소기업</ToggleGroupItem>
-          </ToggleGroup>
-        )}
       />
       <div className="container mx-auto p-4 md:p-8">
         <div className="space-y-6">
@@ -264,9 +235,10 @@ export default function CustomerForecastPage() {
             allCompanies={companiesForSelector}
             selectedCompanyId={selectedCompanyId}
             onCompanyChange={setSelectedCompanyId}
-            // ✨✨✨ 여기에 forecastData와 actualSalesData를 정확히 전달합니다. ✨✨✨
             forecastData={chartDataForDisplay.forecasts}
             actualSalesData={chartDataForDisplay.actualSales}
+            sizeFilter={sizeFilter}
+            onSizeFilterChange={setSizeFilter}
           />
           {/* ✨ DataTable에 onRunForecast와 isForecasting props 추가 */}
           <DataTable 
