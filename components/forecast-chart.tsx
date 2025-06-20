@@ -1,188 +1,415 @@
-// =================================================================
-// 2. app/api/customer-forecast/route.ts - 수정본
-// =================================================================
+// forecast-chart.tsx - 수정된 버전
 
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+"use client"
 
-// ✨ 타입 정의에 probability 추가
-export type ForecastData = {
-  cofId: number;
-  customerId: number;
-  companyName: string | null;
-  customerName: string | null;
-  companySize: string | null;
-  predictedDate: string;
+import * as React from "react"
+import { Check, ChevronsUpDown } from "lucide-react"
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts"
+
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { type ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart"
+
+// 날짜 관련 유틸리티
+import { format } from "date-fns"
+import { Calendar as CalendarIcon } from "lucide-react"
+import { Calendar } from "@/components/ui/calendar"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+// API 응답 타입
+export type Forecast = {
+  predictedDate: string; // "YYYY-MM-DDTHH:MM:SS" 형식 (예측 날짜)
   predictedQuantity: number;
-  mape: number | null;
-  predictionModel: string;
-  probability: number | null; // ✨ 새로 추가
-  forecastGenerationDate: string;
 };
 
-export type ActualSalesData = {
-  date: string;
-  quantity: number;
+export type ActualSales = {
+    date: string; // "YYYY-MM-DD" 형식 (실제 주문 날짜)
+    quantity: number; // 실제 매출액
 };
 
-export type CustomerForecastResponse = {
-  customerId: number;
+export type Company = {
+  customerId: number | string;
   companyName: string | null;
-  customerName: string | null;
   companySize: string | null;
-  forecasts: ForecastData[];
-  actualSales: ActualSalesData[];
 };
 
-export async function GET() {
-  try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+// 차트 설정
+const chartConfig = {
+  predictedQuantity: { label: "예측 수량 (월별)", color: "hsl(var(--chart-1))" },
+  actualSalesMonthly: { label: "실제 수량 (월별)", color: "hsl(var(--chart-2))" },
+} satisfies ChartConfig
 
-    const sizeOrder: { [key: string]: number } = {
-      "대기업": 1,
-      "중견기업": 2,
-      "중소기업": 3,
-    };
+// 회사 검색 콤보박스 컴포넌트 (기존과 동일)
+function CompanySearchCombobox({
+  companies,
+  value,
+  onSelect,
+  className,
+}: {
+  companies: Company[];
+  value: string | null;
+  onSelect: (value: string) => void;
+  className?: string;
+}) {
+  const [open, setOpen] = React.useState(false)
 
-    // ✨ SELECT 쿼리에 PROBABILITY 추가
-    const { data: rawForecasts, error: forecastError } = await supabase
-      .from("customer_order_forecast")
-      .select(`
-        COF_ID,
-        CUSTOMER_ID,
-        PREDICTED_DATE,
-        PREDICTED_QUANTITY,
-        MAPE,
-        PREDICTION_MODEL,
-        PROBABILITY,
-        FORECAST_GENERATION_DATETIME,
-        customers (
-          COMPANY_NAME,
-          NAME,
-          COMPANY_SIZE
-        )
-      `)
-      .order("PREDICTED_DATE", { ascending: true });
+  const selectedCompany = companies.find(
+    (company) => String(company.customerId) === value
+  )
 
-    if (forecastError) {
-      console.error("Supabase forecast fetch error:", forecastError);
-      throw forecastError;
+  const getDisplayValue = (company: Company | undefined) => {
+    if (!company) return "회사를 선택하세요...";
+    const name = company.companyName || `Customer ${company.customerId}`;
+    return company.companySize ? `${name} (${company.companySize})` : name;
+  }
+  
+  const commandFilter = (value: string, search: string): number => {
+    if (value.toLowerCase().includes(search.toLowerCase())) {
+      return 1
     }
+    return 0
+  }
 
-    const customerIds = [...new Set(rawForecasts.map(f => f.CUSTOMER_ID))];
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn("w-full justify-between @md:w-56", className)}
+        >
+          <span className="truncate">{getDisplayValue(selectedCompany)}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+        <Command filter={commandFilter}>
+          <CommandInput placeholder="회사명 또는 규모로 검색..." />
+          <CommandList>
+            <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
+            <CommandGroup>
+              {companies.map((company) => (
+                <CommandItem
+                  key={company.customerId}
+                  value={`${company.companyName || ''} ${company.companySize || ''}`}
+                  onSelect={() => {
+                    onSelect(String(company.customerId))
+                    setOpen(false)
+                  }}
+                >
+                  <Check
+                    className={cn("mr-2 h-4 w-4", value === String(company.customerId) ? "opacity-100" : "opacity-0")}
+                  />
+                  <span>{getDisplayValue(company)}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
-    // 실제 주문 데이터 가져오기 (기존과 동일)
-    const { data: rawOrdersWithDetails, error: orderJoinError } = await supabase
-        .from("orders")
-        .select(`
-            ORDER_DATE,
-            QUANTITY,
-            products (
-                "SELLINGPRICE" 
-            ),
-            contacts (  
-                CUSTOMER_ID 
-            )
-        `)
-        .in('contacts.CUSTOMER_ID', customerIds) 
-        .order("ORDER_DATE", { ascending: true });
+// 날짜 범위 선택기 컴포넌트 (기존과 동일)
+interface DateRangePickerProps {
+  selectedRange: { from: Date | undefined; to: Date | undefined } | undefined;
+  onSelectRange: (range: { from: Date | undefined; to: Date | undefined } | undefined) => void;
+  className?: string;
+}
 
-    if (orderJoinError) {
-        console.error("Supabase orders join fetch error:", orderJoinError);
-        throw orderJoinError;
-    }
+function DateRangePicker({ selectedRange, onSelectRange, className }: DateRangePickerProps) {
+  const displayValue = selectedRange?.from ? (
+    selectedRange.to ? (
+      `${format(selectedRange.from, "yyyy년 MM월 dd일")} - ${format(selectedRange.to, "yyyy년 MM월 dd일")}`
+    ) : (
+      format(selectedRange.from, "yyyy년 MM월 dd일")
+    )
+  ) : (
+    "날짜 범위 선택"
+  );
 
-    const actualSalesMap = new Map<number, Map<string, number>>();
-    rawOrdersWithDetails.forEach(order => { 
-        const customerId = order.contacts?.CUSTOMER_ID; 
-        if (customerId === undefined || customerId === null) return; 
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          id="date"
+          variant={"outline"}
+          className={cn(
+            "w-full justify-start text-left font-normal @md:w-[280px]",
+            !selectedRange && "text-muted-foreground",
+            className
+          )}
+        >
+          <CalendarIcon className="mr-2 h-4 w-4" />
+          {displayValue}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          initialFocus
+          mode="range"
+          defaultMonth={selectedRange?.from}
+          selected={selectedRange}
+          onSelect={onSelectRange}
+          numberOfMonths={2}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
 
-        const orderDate = new Date(order.ORDER_DATE);
-        const yearMonthDay = `${orderDate.getFullYear()}-${(orderDate.getMonth() + 1).toString().padStart(2, '0')}-${orderDate.getDate().toString().padStart(2, '0')}`;
-        
-        const sellingPrice = order.products?.SELLINGPRICE || 0;
-        const calculatedRevenue = order.QUANTITY * sellingPrice;
+export function ForecastChart({
+  allCompanies,
+  selectedCompanyId,
+  onCompanyChange,
+  forecastData,
+  actualSalesData
+}: {
+  allCompanies: Company[];
+  selectedCompanyId: string | null;
+  onCompanyChange: (id: string) => void;
+  forecastData: Forecast[]; 
+  actualSalesData: ActualSales[];
+}) {
+  const [selectedRange, setSelectedRange] = React.useState<{ from: Date | undefined; to: Date | undefined } | undefined>(undefined);
+  const [period, setPeriod] = React.useState<string>("12months"); 
 
-        if (!actualSalesMap.has(customerId)) {
-            actualSalesMap.set(customerId, new Map<string, number>());
-        }
-        const customerDailyMap = actualSalesMap.get(customerId)!;
-        customerDailyMap.set(yearMonthDay, (customerDailyMap.get(yearMonthDay) || 0) + calculatedRevenue);
-    });
+  // 🔥 핵심 수정: 일별 매출을 월별로 집계
+  const monthlyActualSales = React.useMemo(() => {
+    console.log("Original actualSalesData:", actualSalesData);
     
-    // ✨ 예측 데이터 변환 시 probability 추가
-    const forecastsData: ForecastData[] = rawForecasts.map(item => ({
-        cofId: item.COF_ID,
-        customerId: item.CUSTOMER_ID,
-        companyName: item.customers?.COMPANY_NAME || null,
-        customerName: item.customers?.NAME || null,
-        companySize: item.customers?.COMPANY_SIZE || null,
-        predictedDate: item.PREDICTED_DATE, 
-        predictedQuantity: item.PREDICTED_QUANTITY,
-        mape: item.MAPE,
-        predictionModel: item.PREDICTION_MODEL,
-        probability: item.PROBABILITY, // ✨ 새로 추가
-        forecastGenerationDate: item.FORECAST_GENERATION_DATETIME 
-    }));
+    if (!actualSalesData || !Array.isArray(actualSalesData)) {
+      return [];
+    }
 
-    // 고객별로 데이터 그룹화 (기존과 동일)
-    const customerMap = new Map<number, CustomerForecastResponse>();
-    customerIds.forEach(cId => {
-      const customerDetails = rawForecasts.find(rf => rf.CUSTOMER_ID === cId)?.customers;
-      customerMap.set(cId, {
-          customerId: cId,
-          companyName: customerDetails?.COMPANY_NAME || null,
-          customerName: customerDetails?.NAME || null,
-          companySize: customerDetails?.COMPANY_SIZE || null,
-          forecasts: [],
-          actualSales: [],
+    // 월별로 그룹화하여 합계 계산
+    const monthlyMap = new Map<string, number>();
+    
+    actualSalesData.forEach(item => {
+      // "2024-12-15" -> "2024-12-01" (월 첫날로 변환)
+      const date = new Date(item.date);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+      
+      const currentSum = monthlyMap.get(monthKey) || 0;
+      monthlyMap.set(monthKey, currentSum + (item.quantity || 0));
+    });
+
+    const result = Array.from(monthlyMap.entries()).map(([date, quantity]) => ({
+      date,
+      quantity
+    })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    console.log("Monthly aggregated actualSales:", result);
+    return result;
+  }, [actualSalesData]);
+
+  // 🔥 핵심 수정: 예측과 실제 매출을 모두 월별 기준으로 결합
+  const combinedChartData = React.useMemo(() => {
+    const dataMap = new Map<string, { predictedQuantity?: number; actualSalesMonthly?: number }>();
+
+    // 예측 데이터 추가 (이미 월별)
+    if (forecastData && Array.isArray(forecastData)) {
+      forecastData.forEach(item => {
+        const dateKey = item.predictedDate.split('T')[0];
+        dataMap.set(dateKey, { 
+          ...dataMap.get(dateKey), 
+          predictedQuantity: item.predictedQuantity 
+        });
+      });
+    }
+
+    // 월별 집계된 실제 매출 데이터 추가
+    monthlyActualSales.forEach(item => {
+      dataMap.set(item.date, { 
+        ...dataMap.get(item.date), 
+        actualSalesMonthly: item.quantity 
       });
     });
 
-    forecastsData.forEach(forecast => {
-        if (customerMap.has(forecast.customerId)) {
-            customerMap.get(forecast.customerId)!.forecasts.push(forecast);
-        }
-    });
-
-    customerMap.forEach(customerData => {
-        const customerId = customerData.customerId;
-        const dailySalesForCustomer = actualSalesMap.get(customerId);
-        if (dailySalesForCustomer) {
-            customerData.actualSales = Array.from(dailySalesForCustomer.entries()).map(([date, quantity]) => ({
-                date: date,
-                quantity: quantity,
-            })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        }
-    });
-
-    const customerForecastResponses: CustomerForecastResponse[] = Array.from(customerMap.values());
+    const sortedData = Array.from(dataMap.entries())
+      .map(([date, values]) => ({
+        date: date,
+        predictedQuantity: values.predictedQuantity || 0,
+        actualSalesMonthly: values.actualSalesMonthly || 0,
+      }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
-    // 최종 응답 데이터 정렬
-    customerForecastResponses.sort((a, b) => {
-        const orderA = a.companySize ? sizeOrder[a.companySize] : Infinity;
-        const orderB = b.companySize ? sizeOrder[b.companySize] : Infinity;
+    console.log("Combined Chart Data (월별 기준):", sortedData);
+    return sortedData;
+  }, [forecastData, monthlyActualSales]);
 
-        if (orderA !== orderB) {
-            return orderA - orderB;
-        }
+  // 날짜 범위 필터링
+  const filteredCombinedChartData = React.useMemo(() => {
+    if (!selectedRange?.from && !selectedRange?.to) {
+      return combinedChartData; 
+    }
 
-        return (a.companyName || '').localeCompare(b.companyName || '');
+    const fromTime = selectedRange.from ? new Date(selectedRange.from.setHours(0,0,0,0)).getTime() : -Infinity;
+    const toTime = selectedRange.to ? new Date(selectedRange.to.setHours(23,59,59,999)).getTime() : Infinity;
+
+    const filteredData = combinedChartData.filter(d => {
+      const date = new Date(d.date).getTime(); 
+      return date >= fromTime && date <= toTime;
     });
 
-    return NextResponse.json(customerForecastResponses);
+    console.log("Filtered Combined Chart Data:", filteredData);
+    return filteredData;
+  }, [combinedChartData, selectedRange]);
 
-  } catch (err: any) {
-    console.error("❌ Supabase 처리 실패:", err);
-    return NextResponse.json(
-      {
-        error: "데이터베이스 처리 중 오류가 발생했습니다.",
-        detail: err.message,
-      },
-      { status: 500 }
-    );
-  }
+  // 기간 선택 핸들러
+  const handlePeriodChange = (value: string) => {
+    setPeriod(value);
+    const today = new Date();
+    let fromDate: Date | undefined;
+    let toDate: Date | undefined;
+
+    switch (value) {
+      case "6months":
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 6, today.getDate());
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate()); // 미래 1년
+        break;
+      case "12months":
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 12, today.getDate());
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate()); // 미래 1년
+        break;
+      case "24months":
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 24, today.getDate());
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate()); // 미래 1년
+        break;
+      case "all":
+      default:
+        fromDate = undefined; 
+        toDate = undefined; 
+        break;
+    }
+    setSelectedRange({ from: fromDate, to: toDate });
+  };
+
+  return (
+    <Card>
+      <CardHeader className="relative flex-col items-start @md:flex-row @md:items-center">
+        <div>
+          <CardTitle>주문량 예측 추이 (월별 비교)</CardTitle>
+          <CardDescription>
+            선택된 회사의 월별 주문 예측 및 실제 수량 추이입니다. 
+            실제 매출은 일별 데이터를 월별로 집계하여 표시됩니다.
+          </CardDescription>
+        </div>
+        <div className="mt-4 flex w-full flex-col gap-2 @md:ml-auto @md:mt-0 @md:w-auto @md:flex-row">
+          <Select value={period} onValueChange={handlePeriodChange}>
+            <SelectTrigger className="w-full @md:w-[180px]">
+              <SelectValue placeholder="기간 선택" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체 기간</SelectItem>
+              <SelectItem value="6months">최근 6개월</SelectItem>
+              <SelectItem value="12months">최근 12개월</SelectItem>
+              <SelectItem value="24months">최근 24개월</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <DateRangePicker 
+            selectedRange={selectedRange} 
+            onSelectRange={setSelectedRange} 
+          />
+
+          <CompanySearchCombobox
+            companies={allCompanies}
+            value={selectedCompanyId}
+            onSelect={onCompanyChange}
+          />
+        </div>
+      </CardHeader>
+      <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
+        <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
+          <AreaChart data={filteredCombinedChartData}>
+            <defs>
+              <linearGradient id="fillPredictedQuantity" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.1} />
+              </linearGradient>
+              <linearGradient id="fillActualSalesMonthly" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.1} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="date" 
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              minTickGap={32}
+              tickFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'short' })}
+            />
+            <YAxis 
+              tickFormatter={(value) => value.toLocaleString()}
+              domain={[(dataMin) => Math.max(0, dataMin * 0.9), (dataMax) => dataMax * 1.1]}
+            />
+            <Tooltip
+              cursor={false}
+              content={
+                <ChartTooltipContent
+                  labelFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'long' })}
+                  indicator="dot"
+                  formatter={(value, name) => [
+                    `${Number(value).toLocaleString()}원`,
+                    name === "predictedQuantity" ? "예측 수량 (월별)" : "실제 수량 (월별)"
+                  ]}
+                />
+              }
+            />
+            <Legend 
+              verticalAlign="top" 
+              height={36} 
+              wrapperStyle={{ top: -20, left: 'auto', right: 0 }} 
+              content={({ payload }) => {
+                return (
+                  <ul className="flex flex-wrap justify-end gap-4 text-sm">
+                    {payload?.map((entry, index) => {
+                      const config = chartConfig[entry.dataKey as keyof typeof chartConfig];
+                      if (!config) return null;
+                      return (
+                        <li
+                          key={`item-${index}`}
+                          className="flex items-center gap-1.5"
+                        >
+                          <span
+                            className="h-3 w-3 shrink-0 rounded-full"
+                            style={{
+                              backgroundColor: config.color,
+                            }}
+                          />
+                          <span className="text-muted-foreground">{config.label}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                );
+              }}
+            />
+            {/* 예측 수량 Area */}
+            <Area
+              dataKey="predictedQuantity" 
+              type="natural" 
+              fill="url(#fillPredictedQuantity)"
+              stroke="var(--color-predictedQuantity)"
+            />
+            {/* 실제 수량 Area (월별 집계) */}
+            <Area 
+              dataKey="actualSalesMonthly" 
+              type="natural" 
+              fill="url(#fillActualSalesMonthly)" 
+              stroke="var(--color-actualSalesMonthly)" 
+            />
+          </AreaChart>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  )
 }
