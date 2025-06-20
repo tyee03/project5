@@ -1,9 +1,11 @@
-// customer_forecast/route.ts 파일 전체
+// =================================================================
+// 2. app/api/customer-forecast/route.ts - 수정본
+// =================================================================
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// (타입 정의는 기존과 동일)
+// ✨ 타입 정의에 probability 추가
 export type ForecastData = {
   cofId: number;
   customerId: number;
@@ -14,6 +16,7 @@ export type ForecastData = {
   predictedQuantity: number;
   mape: number | null;
   predictionModel: string;
+  probability: number | null; // ✨ 새로 추가
   forecastGenerationDate: string;
 };
 
@@ -38,14 +41,13 @@ export async function GET() {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // ✨ 1. 기업 규모별 정렬 순서 정의
     const sizeOrder: { [key: string]: number } = {
       "대기업": 1,
       "중견기업": 2,
       "중소기업": 3,
     };
 
-    // 2. customer_order_forecast 테이블에서 예측 데이터 가져오기 (이전과 동일)
+    // ✨ SELECT 쿼리에 PROBABILITY 추가
     const { data: rawForecasts, error: forecastError } = await supabase
       .from("customer_order_forecast")
       .select(`
@@ -55,6 +57,7 @@ export async function GET() {
         PREDICTED_QUANTITY,
         MAPE,
         PREDICTION_MODEL,
+        PROBABILITY,
         FORECAST_GENERATION_DATETIME,
         customers (
           COMPANY_NAME,
@@ -71,7 +74,7 @@ export async function GET() {
 
     const customerIds = [...new Set(rawForecasts.map(f => f.CUSTOMER_ID))];
 
-    // 3. 실제 주문 데이터 가져오기 (이전과 동일)
+    // 실제 주문 데이터 가져오기 (기존과 동일)
     const { data: rawOrdersWithDetails, error: orderJoinError } = await supabase
         .from("orders")
         .select(`
@@ -110,7 +113,7 @@ export async function GET() {
         customerDailyMap.set(yearMonthDay, (customerDailyMap.get(yearMonthDay) || 0) + calculatedRevenue);
     });
     
-    // 4. 예측 데이터를 ForecastData 타입으로 변환 (이전과 동일)
+    // ✨ 예측 데이터 변환 시 probability 추가
     const forecastsData: ForecastData[] = rawForecasts.map(item => ({
         cofId: item.COF_ID,
         customerId: item.CUSTOMER_ID,
@@ -121,10 +124,11 @@ export async function GET() {
         predictedQuantity: item.PREDICTED_QUANTITY,
         mape: item.MAPE,
         predictionModel: item.PREDICTION_MODEL,
+        probability: item.PROBABILITY, // ✨ 새로 추가
         forecastGenerationDate: item.FORECAST_GENERATION_DATETIME 
     }));
 
-    // 5. 고객별로 데이터 그룹화 (이전과 동일)
+    // 고객별로 데이터 그룹화 (기존과 동일)
     const customerMap = new Map<number, CustomerForecastResponse>();
     customerIds.forEach(cId => {
       const customerDetails = rawForecasts.find(rf => rf.CUSTOMER_ID === cId)?.customers;
@@ -157,18 +161,15 @@ export async function GET() {
 
     const customerForecastResponses: CustomerForecastResponse[] = Array.from(customerMap.values());
     
-    // ✨ 6. 최종 응답 데이터를 정렬
+    // 최종 응답 데이터 정렬
     customerForecastResponses.sort((a, b) => {
-        // companySize가 null이거나 정의되지 않은 경우 가장 낮은 순위(Infinity) 부여
         const orderA = a.companySize ? sizeOrder[a.companySize] : Infinity;
         const orderB = b.companySize ? sizeOrder[b.companySize] : Infinity;
 
-        // 기업 규모 순으로 정렬
         if (orderA !== orderB) {
             return orderA - orderB;
         }
 
-        // 기업 규모가 같다면 회사 이름 가나다순으로 2차 정렬
         return (a.companyName || '').localeCompare(b.companyName || '');
     });
 
