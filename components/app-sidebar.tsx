@@ -49,7 +49,7 @@ const data = {
     },
     {
       title: "Analytics",
-      url: "#",
+      url: "/customer-forecast",
       icon: BarChartIcon,
     },
     {
