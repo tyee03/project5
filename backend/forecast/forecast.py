@@ -105,7 +105,7 @@ def update_or_insert_forecasts_db(client: Client, customer_id, forecast_df_to_sa
             if 'MAPE' in old_forecasts_df.columns:
                 old_forecasts_df['MAPE'] = pd.to_numeric(old_forecasts_df['MAPE'], errors='coerce')
             else:
-                 old_forecasts_df['MAPE'] = np.nan
+                old_forecasts_df['MAPE'] = np.nan
             print(f"기존 예측 데이터프레임 (고객 ID: {customer_id}):")
             print(old_forecasts_df.head())
 
@@ -117,13 +117,23 @@ def update_or_insert_forecasts_db(client: Client, customer_id, forecast_df_to_sa
     for _, new_row in forecast_df_to_save.iterrows():
         new_pred_date_dt = new_row['PREDICTED_DATE']
         new_mape = new_row['MAPE'] if pd.notna(new_row['MAPE']) else None
+        # ★★★ 현재 예측의 모델명을 가져옵니다. ★★★
+        new_model_name = new_row['PREDICTION_MODEL']
         
         existing_record = old_forecasts_df[old_forecasts_df['PREDICTED_DATE'] == new_pred_date_dt]
         operation, reason = None, "조건 불충족"
 
+        # ★★★ DB 업데이트 로직을 수정합니다. ★★★
+        is_failure_case = new_model_name in ["Data Insufficient", "Prediction Failed"]
+
         if existing_record.empty:
+            # 기존 데이터가 없으면 무조건 INSERT
             operation, reason = 'INSERT', "기존 예측 없음"
+        elif is_failure_case:
+            # 예측 실패 케이스(Data Insufficient 등)이면 기존 데이터를 강제로 UPDATE
+            operation, reason = 'UPDATE', f"'{new_model_name}' 상태이므로 기존 데이터를 0으로 덮어쓰기"
         else:
+            # 성공적인 예측의 경우에만 MAPE를 비교합니다.
             old_mape = existing_record.iloc[0]['MAPE']
             if pd.isna(old_mape):
                 operation, reason = 'UPDATE', "기존 MAPE 없음"
@@ -140,7 +150,7 @@ def update_or_insert_forecasts_db(client: Client, customer_id, forecast_df_to_sa
             'PREDICTED_DATE': new_pred_date_dt.strftime('%Y-%m-%d'),
             'PREDICTED_QUANTITY': new_row['PREDICTED_QUANTITY'],
             'MAPE': new_mape,
-            'PREDICTION_MODEL': new_row['PREDICTION_MODEL'],
+            'PREDICTION_MODEL': new_model_name,
             'FORECAST_GENERATION_DATETIME': current_run_datetime.isoformat()
         }
         
