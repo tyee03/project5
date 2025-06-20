@@ -1,4 +1,4 @@
-// components/forecast-chart.tsx - 기존 구조로 롤백 (검색 기능 복원)
+// components/forecast-chart.tsx - 기존 구조로 완전 롤백 (검색 기능 복원)
 
 "use client"
 
@@ -151,6 +151,401 @@ function DateRangePicker({ selectedRange, onSelectRange, className }: DateRangeP
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          initialFocus
+          mode="range"
+          defaultMonth={selectedRange?.from}
+          selected={selectedRange}
+          onSelect={onSelectRange}
+          numberOfMonths={2}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function ForecastChart({
+  allCompanies,
+  selectedCompanyId,
+  onCompanyChange,
+  forecastData,
+  actualSalesData
+}: {
+  allCompanies: Company[];
+  selectedCompanyId: string | null;
+  onCompanyChange: (id: string) => void;
+  forecastData: Forecast[]; 
+  actualSalesData: ActualSales[];
+}) {
+  const [selectedRange, setSelectedRange] = React.useState<{ from: Date | undefined; to: Date | undefined } | undefined>(undefined);
+  const [period, setPeriod] = React.useState<string>("12months"); 
+
+  // 월별 실제 매출 집계 (기존과 동일)
+  const monthlyActualSales = React.useMemo(() => {
+    console.log("Original actualSalesData:", actualSalesData);
+    
+    if (!actualSalesData || !Array.isArray(actualSalesData)) {
+      return [];
+    }
+
+    const monthlyMap = new Map<string, number>();
+    
+    actualSalesData.forEach(item => {
+      const date = new Date(item.date);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+      
+      const currentSum = monthlyMap.get(monthKey) || 0;
+      monthlyMap.set(monthKey, currentSum + (item.quantity || 0));
+    });
+
+    const result = Array.from(monthlyMap.entries()).map(([date, quantity]) => ({
+      date,
+      quantity
+    })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    console.log("Monthly aggregated actualSales:", result);
+    return result;
+  }, [actualSalesData]);
+
+  // ✨ 핵심 수정: 확률 정보도 포함하여 차트 데이터 생성
+  const combinedChartData = React.useMemo(() => {
+    const dataMap = new Map<string, { 
+      predictedQuantity?: number; 
+      actualSalesMonthly?: number; 
+      probabilityValues?: number[]; // ✨ 확률 값들을 배열로 수집
+    }>();
+
+    // 예측 데이터 추가 (확률 정보 포함)
+    if (forecastData && Array.isArray(forecastData)) {
+      forecastData.forEach(item => {
+        const dateKey = item.predictedDate.split('T')[0];
+        const existing = dataMap.get(dateKey) || {};
+        
+        dataMap.set(dateKey, { 
+          ...existing,
+          predictedQuantity: (existing.predictedQuantity || 0) + item.predictedQuantity,
+          probabilityValues: [
+            ...(existing.probabilityValues || []),
+            ...(item.probability !== null && item.probability !== undefined ? [item.probability] : [])
+          ]
+        });
+      });
+    }
+
+    // 월별 집계된 실제 매출 데이터 추가
+    monthlyActualSales.forEach(item => {
+      const existing = dataMap.get(item.date) || {};
+      dataMap.set(item.date, { 
+        ...existing,
+        actualSalesMonthly: item.quantity 
+      });
+    });
+
+    // Map을 차트 데이터로 변환 (확률 평균 계산)
+    const sortedData = Array.from(dataMap.entries())
+      .map(([date, values]) => {
+        // 해당 월의 확률들의 평균 계산
+        const avgProbability = values.probabilityValues && values.probabilityValues.length > 0
+          ? (values.probabilityValues.reduce((sum, prob) => sum + prob, 0) / values.probabilityValues.length) * 100 // 퍼센트로 변환
+          : null;
+
+        return {
+          date: date,
+          predictedQuantity: values.predictedQuantity || 0,
+          actualSalesMonthly: values.actualSalesMonthly || 0,
+          averageProbability: avgProbability, // ✨ 평균 확률 추가
+        };
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    console.log("Combined Chart Data with Probability:", sortedData);
+    return sortedData;
+  }, [forecastData, monthlyActualSales]);
+
+  // 날짜 범위 필터링 (기존과 동일)
+  const filteredCombinedChartData = React.useMemo(() => {
+    if (!selectedRange?.from && !selectedRange?.to) {
+      return combinedChartData; 
+    }
+
+    const fromTime = selectedRange.from ? new Date(selectedRange.from.setHours(0,0,0,0)).getTime() : -Infinity;
+    const toTime = selectedRange.to ? new Date(selectedRange.to.setHours(23,59,59,999)).getTime() : Infinity;
+
+    const filteredData = combinedChartData.filter(d => {
+      const date = new Date(d.date).getTime(); 
+      return date >= fromTime && date <= toTime;
+    });
+
+    console.log("Filtered Combined Chart Data:", filteredData);
+    return filteredData;
+  }, [combinedChartData, selectedRange]);
+
+  // 기간 선택 핸들러 (기존과 동일)
+  const handlePeriodChange = (value: string) => {
+    setPeriod(value);
+    const today = new Date();
+    let fromDate: Date | undefined;
+    let toDate: Date | undefined;
+
+    switch (value) {
+      case "6months":
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 6, today.getDate());
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate());
+        break;
+      case "12months":
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 12, today.getDate());
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate());
+        break;
+      case "24months":
+        fromDate = new Date(today.getFullYear(), today.getMonth() - 24, today.getDate());
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate());
+        break;
+      case "all":
+      default:
+        fromDate = undefined; 
+        toDate = undefined; 
+        break;
+    }
+    setSelectedRange({ from: fromDate, to: toDate });
+  };
+
+  // ✨ 확률 데이터가 있는지 확인
+  const hasProbabilityData = filteredCombinedChartData.some(d => d.averageProbability !== null);
+
+  return (
+    <Card>
+      <CardHeader className="relative flex-col items-start @md:flex-row @md:items-center">
+        <div>
+          <CardTitle>주문량 예측 추이 {hasProbabilityData && "및 구매 확률"}</CardTitle>
+          <CardDescription>
+            선택된 회사의 월별 주문 예측 및 실제 수량 추이입니다. 
+            {hasProbabilityData && " B그룹 고객의 경우 구매 확률도 함께 표시됩니다."}
+          </CardDescription>
+        </div>
+        <div className="mt-4 flex w-full flex-col gap-2 @md:ml-auto @md:mt-0 @md:w-auto @md:flex-row">
+          <Select value={period} onValueChange={handlePeriodChange}>
+            <SelectTrigger className="w-full @md:w-[180px]">
+              <SelectValue placeholder="기간 선택" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체 기간</SelectItem>
+              <SelectItem value="6months">최근 6개월</SelectItem>
+              <SelectItem value="12months">최근 12개월</SelectItem>
+              <SelectItem value="24months">최근 24개월</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <DateRangePicker 
+            selectedRange={selectedRange} 
+            onSelectRange={setSelectedRange} 
+          />
+
+          <CompanySearchCombobox
+            companies={allCompanies}
+            value={selectedCompanyId}
+            onSelect={onCompanyChange}
+          />
+        </div>
+      </CardHeader>
+      <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
+        <ChartContainer config={chartConfig} className="aspect-auto h-[300px] w-full">
+          {/* ✨ 확률 데이터가 있으면 ComposedChart, 없으면 AreaChart */}
+          {hasProbabilityData ? (
+            <ComposedChart data={filteredCombinedChartData}>
+              <defs>
+                <linearGradient id="fillPredictedQuantity" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.1} />
+                </linearGradient>
+                <linearGradient id="fillActualSalesMonthly" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="date" 
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={32}
+                tickFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'short' })}
+              />
+              {/* 왼쪽 Y축: 수량 */}
+              <YAxis 
+                yAxisId="quantity"
+                orientation="left"
+                tickFormatter={(value) => value.toLocaleString()}
+                domain={[(dataMin) => Math.max(0, dataMin * 0.9), (dataMax) => dataMax * 1.1]}
+              />
+              {/* 오른쪽 Y축: 확률 (%) */}
+              <YAxis 
+                yAxisId="probability"
+                orientation="right"
+                domain={[0, 100]}
+                tickFormatter={(value) => `${value}%`}
+              />
+              <Tooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    labelFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'long' })}
+                    indicator="dot"
+                    formatter={(value, name) => {
+                      if (name === "averageProbability") {
+                        return [`${Number(value).toFixed(1)}%`, "구매 확률"];
+                      }
+                      return [
+                        `${Number(value).toLocaleString()}`,
+                        name === "predictedQuantity" ? "예측 수량" : "실제 수량"
+                      ];
+                    }}
+                  />
+                }
+              />
+              <Legend 
+                verticalAlign="top" 
+                height={36} 
+                wrapperStyle={{ top: -20, left: 'auto', right: 0 }} 
+                content={({ payload }) => {
+                  return (
+                    <ul className="flex flex-wrap justify-end gap-4 text-sm">
+                      {payload?.map((entry, index) => {
+                        const config = chartConfig[entry.dataKey as keyof typeof chartConfig];
+                        if (!config) return null;
+                        return (
+                          <li
+                            key={`item-${index}`}
+                            className="flex items-center gap-1.5"
+                          >
+                            <span
+                              className="h-3 w-3 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor: config.color,
+                              }}
+                            />
+                            <span className="text-muted-foreground">{config.label}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                }}
+              />
+              {/* 예측 수량 Area */}
+              <Area
+                yAxisId="quantity"
+                dataKey="predictedQuantity" 
+                type="natural" 
+                fill="url(#fillPredictedQuantity)"
+                stroke="var(--color-predictedQuantity)"
+              />
+              {/* 실제 수량 Area */}
+              <Area 
+                yAxisId="quantity"
+                dataKey="actualSalesMonthly" 
+                type="natural" 
+                fill="url(#fillActualSalesMonthly)" 
+                stroke="var(--color-actualSalesMonthly)" 
+              />
+              {/* ✨ 확률 라인 */}
+              <Line
+                yAxisId="probability"
+                type="monotone"
+                dataKey="averageProbability"
+                stroke="var(--color-averageProbability)"
+                strokeWidth={2}
+                dot={{ fill: "var(--color-averageProbability)", strokeWidth: 2, r: 4 }}
+                connectNulls={false}
+              />
+            </ComposedChart>
+          ) : (
+            // 확률 데이터가 없는 경우 기존 AreaChart 사용
+            <AreaChart data={filteredCombinedChartData}>
+              <defs>
+                <linearGradient id="fillPredictedQuantity" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.1} />
+                </linearGradient>
+                <linearGradient id="fillActualSalesMonthly" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="date" 
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={32}
+                tickFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'short' })}
+              />
+              <YAxis 
+                tickFormatter={(value) => value.toLocaleString()}
+                domain={[(dataMin) => Math.max(0, dataMin * 0.9), (dataMax) => dataMax * 1.1]}
+              />
+              <Tooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    labelFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'long' })}
+                    indicator="dot"
+                    formatter={(value, name) => [
+                      `${Number(value).toLocaleString()}`,
+                      name === "predictedQuantity" ? "예측 수량" : "실제 수량"
+                    ]}
+                  />
+                }
+              />
+              <Legend 
+                verticalAlign="top" 
+                height={36} 
+                wrapperStyle={{ top: -20, left: 'auto', right: 0 }} 
+                content={({ payload }) => {
+                  return (
+                    <ul className="flex flex-wrap justify-end gap-4 text-sm">
+                      {payload?.filter(entry => entry.dataKey !== "averageProbability").map((entry, index) => {
+                        const config = chartConfig[entry.dataKey as keyof typeof chartConfig];
+                        if (!config) return null;
+                        return (
+                          <li
+                            key={`item-${index}`}
+                            className="flex items-center gap-1.5"
+                          >
+                            <span
+                              className="h-3 w-3 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor: config.color,
+                              }}
+                            />
+                            <span className="text-muted-foreground">{config.label}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                }}
+              />
+              <Area
+                dataKey="predictedQuantity" 
+                type="natural" 
+                fill="url(#fillPredictedQuantity)"
+                stroke="var(--color-predictedQuantity)"
+              />
+              <Area 
+                dataKey="actualSalesMonthly" 
+                type="natural" 
+                fill="url(#fillActualSalesMonthly)" 
+                stroke="var(--color-actualSalesMonthly)" 
+              />
+            </AreaChart>
+          )}
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  )
+}
         <Calendar
           initialFocus
           mode="range"
