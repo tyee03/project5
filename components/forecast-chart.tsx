@@ -1,10 +1,10 @@
-// forecast-chart.tsx - 수정된 버전
+// components/forecast-chart.tsx - 확률 정보 포함 수정본
 
 "use client"
 
 import * as React from "react"
 import { Check, ChevronsUpDown } from "lucide-react"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts"
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Line, ComposedChart } from "recharts"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -13,22 +13,21 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { type ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart"
 
-// 날짜 관련 유틸리티
 import { format } from "date-fns"
 import { Calendar as CalendarIcon } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-// API 응답 타입
+// ✨ Forecast 타입에 probability 추가
 export type Forecast = {
-  predictedDate: string; // "YYYY-MM-DDTHH:MM:SS" 형식 (예측 날짜)
+  predictedDate: string;
   predictedQuantity: number;
-  probability?: number | null;
+  probability?: number | null; // ✨ 확률 정보 추가
 };
 
 export type ActualSales = {
-    date: string; // "YYYY-MM-DD" 형식 (실제 주문 날짜)
-    quantity: number; // 실제 매출액
+    date: string;
+    quantity: number;
 };
 
 export type Company = {
@@ -37,10 +36,11 @@ export type Company = {
   companySize: string | null;
 };
 
-// 차트 설정
+// ✨ 차트 설정에 확률 라인 추가
 const chartConfig = {
   predictedQuantity: { label: "예측 수량 (월별)", color: "hsl(var(--chart-1))" },
   actualSalesMonthly: { label: "실제 수량 (월별)", color: "hsl(var(--chart-2))" },
+  averageProbability: { label: "구매 확률 (%)", color: "hsl(var(--chart-3))" }, // ✨ 새로 추가
 } satisfies ChartConfig
 
 // 회사 검색 콤보박스 컴포넌트 (기존과 동일)
@@ -180,7 +180,7 @@ export function ForecastChart({
   const [selectedRange, setSelectedRange] = React.useState<{ from: Date | undefined; to: Date | undefined } | undefined>(undefined);
   const [period, setPeriod] = React.useState<string>("12months"); 
 
-  // 🔥 핵심 수정: 일별 매출을 월별로 집계
+  // 월별 실제 매출 집계 (기존과 동일)
   const monthlyActualSales = React.useMemo(() => {
     console.log("Original actualSalesData:", actualSalesData);
     
@@ -188,11 +188,9 @@ export function ForecastChart({
       return [];
     }
 
-    // 월별로 그룹화하여 합계 계산
     const monthlyMap = new Map<string, number>();
     
     actualSalesData.forEach(item => {
-      // "2024-12-15" -> "2024-12-01" (월 첫날로 변환)
       const date = new Date(item.date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
       
@@ -209,42 +207,62 @@ export function ForecastChart({
     return result;
   }, [actualSalesData]);
 
-  // 🔥 핵심 수정: 예측과 실제 매출을 모두 월별 기준으로 결합
+  // ✨ 핵심 수정: 확률 정보도 포함하여 차트 데이터 생성
   const combinedChartData = React.useMemo(() => {
-    const dataMap = new Map<string, { predictedQuantity?: number; actualSalesMonthly?: number }>();
+    const dataMap = new Map<string, { 
+      predictedQuantity?: number; 
+      actualSalesMonthly?: number; 
+      probabilityValues?: number[]; // ✨ 확률 값들을 배열로 수집
+    }>();
 
-    // 예측 데이터 추가 (이미 월별)
+    // 예측 데이터 추가 (확률 정보 포함)
     if (forecastData && Array.isArray(forecastData)) {
       forecastData.forEach(item => {
         const dateKey = item.predictedDate.split('T')[0];
+        const existing = dataMap.get(dateKey) || {};
+        
         dataMap.set(dateKey, { 
-          ...dataMap.get(dateKey), 
-          predictedQuantity: item.predictedQuantity 
+          ...existing,
+          predictedQuantity: (existing.predictedQuantity || 0) + item.predictedQuantity,
+          probabilityValues: [
+            ...(existing.probabilityValues || []),
+            ...(item.probability !== null && item.probability !== undefined ? [item.probability] : [])
+          ]
         });
       });
     }
 
     // 월별 집계된 실제 매출 데이터 추가
     monthlyActualSales.forEach(item => {
+      const existing = dataMap.get(item.date) || {};
       dataMap.set(item.date, { 
-        ...dataMap.get(item.date), 
+        ...existing,
         actualSalesMonthly: item.quantity 
       });
     });
 
+    // Map을 차트 데이터로 변환 (확률 평균 계산)
     const sortedData = Array.from(dataMap.entries())
-      .map(([date, values]) => ({
-        date: date,
-        predictedQuantity: values.predictedQuantity || 0,
-        actualSalesMonthly: values.actualSalesMonthly || 0,
-      }))
+      .map(([date, values]) => {
+        // 해당 월의 확률들의 평균 계산
+        const avgProbability = values.probabilityValues && values.probabilityValues.length > 0
+          ? (values.probabilityValues.reduce((sum, prob) => sum + prob, 0) / values.probabilityValues.length) * 100 // 퍼센트로 변환
+          : null;
+
+        return {
+          date: date,
+          predictedQuantity: values.predictedQuantity || 0,
+          actualSalesMonthly: values.actualSalesMonthly || 0,
+          averageProbability: avgProbability, // ✨ 평균 확률 추가
+        };
+      })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
-    console.log("Combined Chart Data (월별 기준):", sortedData);
+    console.log("Combined Chart Data with Probability:", sortedData);
     return sortedData;
   }, [forecastData, monthlyActualSales]);
 
-  // 날짜 범위 필터링
+  // 날짜 범위 필터링 (기존과 동일)
   const filteredCombinedChartData = React.useMemo(() => {
     if (!selectedRange?.from && !selectedRange?.to) {
       return combinedChartData; 
@@ -262,7 +280,7 @@ export function ForecastChart({
     return filteredData;
   }, [combinedChartData, selectedRange]);
 
-  // 기간 선택 핸들러
+  // 기간 선택 핸들러 (기존과 동일)
   const handlePeriodChange = (value: string) => {
     setPeriod(value);
     const today = new Date();
@@ -272,15 +290,15 @@ export function ForecastChart({
     switch (value) {
       case "6months":
         fromDate = new Date(today.getFullYear(), today.getMonth() - 6, today.getDate());
-        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate()); // 미래 1년
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate());
         break;
       case "12months":
         fromDate = new Date(today.getFullYear(), today.getMonth() - 12, today.getDate());
-        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate()); // 미래 1년
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate());
         break;
       case "24months":
         fromDate = new Date(today.getFullYear(), today.getMonth() - 24, today.getDate());
-        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate()); // 미래 1년
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate());
         break;
       case "all":
       default:
@@ -291,14 +309,17 @@ export function ForecastChart({
     setSelectedRange({ from: fromDate, to: toDate });
   };
 
+  // ✨ 확률 데이터가 있는지 확인
+  const hasProbabilityData = filteredCombinedChartData.some(d => d.averageProbability !== null);
+
   return (
     <Card>
       <CardHeader className="relative flex-col items-start @md:flex-row @md:items-center">
         <div>
-          <CardTitle>주문량 예측 추이 (월별 비교)</CardTitle>
+          <CardTitle>주문량 예측 추이 {hasProbabilityData && "및 구매 확률"}</CardTitle>
           <CardDescription>
             선택된 회사의 월별 주문 예측 및 실제 수량 추이입니다. 
-            실제 매출은 일별 데이터를 월별로 집계하여 표시됩니다.
+            {hasProbabilityData && " B그룹 고객의 경우 구매 확률도 함께 표시됩니다."}
           </CardDescription>
         </div>
         <div className="mt-4 flex w-full flex-col gap-2 @md:ml-auto @md:mt-0 @md:w-auto @md:flex-row">
@@ -327,88 +348,199 @@ export function ForecastChart({
         </div>
       </CardHeader>
       <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-        <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
-          <AreaChart data={filteredCombinedChartData}>
-            <defs>
-              <linearGradient id="fillPredictedQuantity" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.1} />
-              </linearGradient>
-              <linearGradient id="fillActualSalesMonthly" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.1} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey="date" 
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              minTickGap={32}
-              tickFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'short' })}
-            />
-            <YAxis 
-              tickFormatter={(value) => value.toLocaleString()}
-              domain={[(dataMin) => Math.max(0, dataMin * 0.9), (dataMax) => dataMax * 1.1]}
-            />
-            <Tooltip
-              cursor={false}
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'long' })}
-                  indicator="dot"
-                  formatter={(value, name) => [
-                    `${Number(value).toLocaleString()}원`,
-                    name === "predictedQuantity" ? "예측 수량 (월별)" : "실제 수량 (월별)"
-                  ]}
-                />
-              }
-            />
-            <Legend 
-              verticalAlign="top" 
-              height={36} 
-              wrapperStyle={{ top: -20, left: 'auto', right: 0 }} 
-              content={({ payload }) => {
-                return (
-                  <ul className="flex flex-wrap justify-end gap-4 text-sm">
-                    {payload?.map((entry, index) => {
-                      const config = chartConfig[entry.dataKey as keyof typeof chartConfig];
-                      if (!config) return null;
-                      return (
-                        <li
-                          key={`item-${index}`}
-                          className="flex items-center gap-1.5"
-                        >
-                          <span
-                            className="h-3 w-3 shrink-0 rounded-full"
-                            style={{
-                              backgroundColor: config.color,
-                            }}
-                          />
-                          <span className="text-muted-foreground">{config.label}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                );
-              }}
-            />
-            {/* 예측 수량 Area */}
-            <Area
-              dataKey="predictedQuantity" 
-              type="natural" 
-              fill="url(#fillPredictedQuantity)"
-              stroke="var(--color-predictedQuantity)"
-            />
-            {/* 실제 수량 Area (월별 집계) */}
-            <Area 
-              dataKey="actualSalesMonthly" 
-              type="natural" 
-              fill="url(#fillActualSalesMonthly)" 
-              stroke="var(--color-actualSalesMonthly)" 
-            />
-          </AreaChart>
+        <ChartContainer config={chartConfig} className="aspect-auto h-[300px] w-full">
+          {/* ✨ 확률 데이터가 있으면 ComposedChart, 없으면 AreaChart */}
+          {hasProbabilityData ? (
+            <ComposedChart data={filteredCombinedChartData}>
+              <defs>
+                <linearGradient id="fillPredictedQuantity" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.1} />
+                </linearGradient>
+                <linearGradient id="fillActualSalesMonthly" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="date" 
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={32}
+                tickFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'short' })}
+              />
+              {/* 왼쪽 Y축: 수량 */}
+              <YAxis 
+                yAxisId="quantity"
+                orientation="left"
+                tickFormatter={(value) => value.toLocaleString()}
+                domain={[(dataMin) => Math.max(0, dataMin * 0.9), (dataMax) => dataMax * 1.1]}
+              />
+              {/* 오른쪽 Y축: 확률 (%) */}
+              <YAxis 
+                yAxisId="probability"
+                orientation="right"
+                domain={[0, 100]}
+                tickFormatter={(value) => `${value}%`}
+              />
+              <Tooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    labelFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'long' })}
+                    indicator="dot"
+                    formatter={(value, name) => {
+                      if (name === "averageProbability") {
+                        return [`${Number(value).toFixed(1)}%`, "구매 확률"];
+                      }
+                      return [
+                        `${Number(value).toLocaleString()}원`,
+                        name === "predictedQuantity" ? "예측 수량" : "실제 수량"
+                      ];
+                    }}
+                  />
+                }
+              />
+              <Legend 
+                verticalAlign="top" 
+                height={36} 
+                wrapperStyle={{ top: -20, left: 'auto', right: 0 }} 
+                content={({ payload }) => {
+                  return (
+                    <ul className="flex flex-wrap justify-end gap-4 text-sm">
+                      {payload?.map((entry, index) => {
+                        const config = chartConfig[entry.dataKey as keyof typeof chartConfig];
+                        if (!config) return null;
+                        return (
+                          <li
+                            key={`item-${index}`}
+                            className="flex items-center gap-1.5"
+                          >
+                            <span
+                              className="h-3 w-3 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor: config.color,
+                              }}
+                            />
+                            <span className="text-muted-foreground">{config.label}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                }}
+              />
+              {/* 예측 수량 Area */}
+              <Area
+                yAxisId="quantity"
+                dataKey="predictedQuantity" 
+                type="natural" 
+                fill="url(#fillPredictedQuantity)"
+                stroke="var(--color-predictedQuantity)"
+              />
+              {/* 실제 수량 Area */}
+              <Area 
+                yAxisId="quantity"
+                dataKey="actualSalesMonthly" 
+                type="natural" 
+                fill="url(#fillActualSalesMonthly)" 
+                stroke="var(--color-actualSalesMonthly)" 
+              />
+              {/* ✨ 확률 라인 */}
+              <Line
+                yAxisId="probability"
+                type="monotone"
+                dataKey="averageProbability"
+                stroke="var(--color-averageProbability)"
+                strokeWidth={2}
+                dot={{ fill: "var(--color-averageProbability)", strokeWidth: 2, r: 4 }}
+                connectNulls={false}
+              />
+            </ComposedChart>
+          ) : (
+            // 확률 데이터가 없는 경우 기존 AreaChart 사용
+            <AreaChart data={filteredCombinedChartData}>
+              <defs>
+                <linearGradient id="fillPredictedQuantity" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="var(--color-predictedQuantity)" stopOpacity={0.1} />
+                </linearGradient>
+                <linearGradient id="fillActualSalesMonthly" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="var(--color-actualSalesMonthly)" stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="date" 
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={32}
+                tickFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'short' })}
+              />
+              <YAxis 
+                tickFormatter={(value) => value.toLocaleString()}
+                domain={[(dataMin) => Math.max(0, dataMin * 0.9), (dataMax) => dataMax * 1.1]}
+              />
+              <Tooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    labelFormatter={(value) => new Date(value).toLocaleDateString("ko-KR", { year: 'numeric', month: 'long' })}
+                    indicator="dot"
+                    formatter={(value, name) => [
+                      `${Number(value).toLocaleString()}원`,
+                      name === "predictedQuantity" ? "예측 수량" : "실제 수량"
+                    ]}
+                  />
+                }
+              />
+              <Legend 
+                verticalAlign="top" 
+                height={36} 
+                wrapperStyle={{ top: -20, left: 'auto', right: 0 }} 
+                content={({ payload }) => {
+                  return (
+                    <ul className="flex flex-wrap justify-end gap-4 text-sm">
+                      {payload?.filter(entry => entry.dataKey !== "averageProbability").map((entry, index) => {
+                        const config = chartConfig[entry.dataKey as keyof typeof chartConfig];
+                        if (!config) return null;
+                        return (
+                          <li
+                            key={`item-${index}`}
+                            className="flex items-center gap-1.5"
+                          >
+                            <span
+                              className="h-3 w-3 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor: config.color,
+                              }}
+                            />
+                            <span className="text-muted-foreground">{config.label}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                }}
+              />
+              <Area
+                dataKey="predictedQuantity" 
+                type="natural" 
+                fill="url(#fillPredictedQuantity)"
+                stroke="var(--color-predictedQuantity)"
+              />
+              <Area 
+                dataKey="actualSalesMonthly" 
+                type="natural" 
+                fill="url(#fillActualSalesMonthly)" 
+                stroke="var(--color-actualSalesMonthly)" 
+              />
+            </AreaChart>
+          )}
         </ChartContainer>
       </CardContent>
     </Card>
