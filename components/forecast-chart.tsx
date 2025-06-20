@@ -271,15 +271,15 @@ export function ForecastChart({
     switch (value) {
       case "6months":
         fromDate = new Date(today.getFullYear(), today.getMonth() - 6, today.getDate());
-        toDate = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate()); // 미래 1년
         break;
       case "12months":
         fromDate = new Date(today.getFullYear(), today.getMonth() - 12, today.getDate());
-        toDate = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate()); // 미래 1년
         break;
       case "24months":
         fromDate = new Date(today.getFullYear(), today.getMonth() - 24, today.getDate());
-        toDate = new Date(today.getFullYear() + 5, today.getMonth(), today.getDate());
+        toDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate()); // 미래 1년
         break;
       case "all":
       default:
